@@ -3,7 +3,7 @@
 
     let selectedCategory = $state("Ramens");
 
-    // Controla si el carrito está abierto
+    // Controla si el carrito está abierto o no
     let cartOpen = $state(false);
 
     // Productos que están dentro del carrito

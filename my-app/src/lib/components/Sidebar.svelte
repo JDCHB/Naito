@@ -74,7 +74,7 @@
 
     <!-- FOOTER -->
     <div class="sidebar-footer">
-        <p>© 2026 Naitos House</p>
+        <p>© 2026 Naito House</p>
     </div>
 </aside>
 

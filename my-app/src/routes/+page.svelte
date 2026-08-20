@@ -209,6 +209,11 @@ TOTAL: ${formatPrice(cartTotal)}
 
 <Sidebar onCategoryChange={changeCategory} />
 
+<svelte:head>
+    <title>Naito House</title>
+    <link rel="icon" href="/Logo.jpg" />
+</svelte:head>
+
 <main class="content">
     <section class="catalog">
         <!-- ENCABEZADO -->

@@ -211,7 +211,6 @@ TOTAL: ${formatPrice(cartTotal)}
 
 <svelte:head>
     <title>Naito House</title>
-    <link rel="icon" href="/Logo.jpg" />
 </svelte:head>
 
 <main class="content">

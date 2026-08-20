@@ -87,7 +87,7 @@
                 rgba(5, 5, 5, 0.58),
                 rgba(5, 5, 5, 0.58)
             ),
-            url("Fondos/Fondo-oscuro.jpg");
+            url("/my-app/static/Fondos/Fondo-oscuro.jpg");
 
         background-size: 180px 180px;
         background-repeat: repeat;

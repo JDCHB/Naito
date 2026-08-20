@@ -413,7 +413,7 @@ TOTAL: ${formatPrice(cartTotal)}
         color: #1b1b1b;
 
         /* FONDO */
-        background-image: url("Fondos/Fondo-gris.jpeg");
+        background-image: url("/my-app/static/Fondos/Fondo-gris.jpeg");
         background-size: 350px 350px;
         background-position: center;
         background-repeat: repeat;

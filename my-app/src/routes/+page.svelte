@@ -180,7 +180,7 @@
     function realizarPedido() {
         if (cart.length === 0) return;
 
-        let mensaje = `🍜 PEDIDO - NAITO HOUSE
+        let mensaje = `🍜 PEDIDO - Mikaito
 
 `;
 
@@ -197,7 +197,7 @@ Subtotal: ${formatPrice(subtotal)}
         mensaje += `--------------------
 TOTAL: ${formatPrice(cartTotal)}
 
-¡Hola! Quisiera realizar este pedido.`;
+¡Hola!, quisiera realizar este pedido.`;
 
         const whatsappNumber = "573148287958";
 
@@ -210,7 +210,7 @@ TOTAL: ${formatPrice(cartTotal)}
 <Sidebar onCategoryChange={changeCategory} />
 
 <svelte:head>
-    <title>Naito House</title>
+    <title>Mikaito</title>
 </svelte:head>
 
 <main class="content">

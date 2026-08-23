@@ -26,7 +26,7 @@
 
         console.log("Usuario autenticado:", data.user);
 
-        goto("/admin");
+        goto("/salchipapa");
     }
 </script>
 

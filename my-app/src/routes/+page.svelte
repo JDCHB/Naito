@@ -1,7 +1,57 @@
 <script>
     import Sidebar from "$lib/components/Sidebar.svelte";
 
+    import { onMount } from "svelte";
+    import { supabase } from "$lib/supabase";
+
     let selectedCategory = $state("Ramens");
+
+    // Productos que vienen de Supabase
+    let products = $state([]);
+
+    // Cargar categorías y productos
+    onMount(async () => {
+        // Obtener categorías
+        const { data: categorias, error: categoriasError } = await supabase
+            .from("categorias")
+            .select("*");
+
+        if (categoriasError) {
+            console.error("Error obteniendo categorías:", categoriasError);
+            return;
+        }
+
+        console.log("Categorías:", categorias);
+
+        // Obtener productos
+        const { data: productos, error: productosError } = await supabase
+            .from("productos")
+            .select("*");
+
+        if (productosError) {
+            console.error("Error obteniendo productos:", productosError);
+            return;
+        }
+
+        // Convertir los datos de Supabase al formato que ya utiliza nuestro catálogo
+        products = productos.map((producto) => {
+            const categoria = categorias.find(
+                (categoria) => categoria.id === producto.categoria_id,
+            );
+
+            return {
+                id: producto.id,
+                nombre: producto.nombre,
+                descripcion: producto.descripcion,
+                precio: producto.precio,
+                imagen: producto.imagen_url,
+                categoria: categoria?.nombre ?? "",
+                activo: producto.activo,
+            };
+        });
+
+        console.log("Productos:", products);
+    });
 
     // Controla si el carrito está abierto o no
     let cartOpen = $state(false);
@@ -13,90 +63,17 @@
         selectedCategory = category;
     }
 
-    const products = [
-        {
-            id: 1,
-            nombre: "Tonkotsu Ramen",
-            descripcion: "Caldo cremoso de cerdo con huevo y cebollín.",
-            precio: 28000,
-            imagen: "/Productos/Tonkotsu_Ramen.jpg",
-            categoria: "Ramens",
-        },
-        {
-            id: 2,
-            nombre: "Shoyu Ramen",
-            descripcion: "Caldo tradicional de soja con cerdo y vegetales.",
-            precio: 26000,
-            imagen: "/Productos/Shoyu_Ramen.jpg",
-            categoria: "Ramens",
-        },
-        {
-            id: 3,
-            nombre: "Miso Ramen",
-            descripcion: "Caldo de miso con maíz y huevo.",
-            precio: 27000,
-            imagen: "/Productos/Miso_Ramen.jpg",
-            categoria: "Ramens",
-        },
-
-        // BEBIDAS
-
-        {
-            id: 4,
-            nombre: "Matcha Latte",
-            descripcion: "Deliciosa bebida de matcha con leche.",
-            precio: 12000,
-            imagen: "/Productos/Payasito.jpg",
-            categoria: "Bebidas",
-        },
-        {
-            id: 5,
-            nombre: "Té Verde Japonés",
-            descripcion: "Té verde japonés tradicional.",
-            precio: 8000,
-            imagen: "/Productos/Payasito.jpg",
-            categoria: "Bebidas",
-        },
-        {
-            id: 6,
-            nombre: "Ramune",
-            descripcion: "Refresco japonés tradicional.",
-            precio: 10000,
-            imagen: "/Productos/Payasito.jpg",
-            categoria: "Bebidas",
-        },
-
-        // SNACKS
-
-        {
-            id: 7,
-            nombre: "Gyozas",
-            descripcion: "Gyozas japonesas rellenas de cerdo.",
-            precio: 15000,
-            imagen: "/Productos/Payasito.jpg",
-            categoria: "Snacks",
-        },
-        {
-            id: 8,
-            nombre: "Edamame",
-            descripcion: "Edamame japonés ligeramente salado.",
-            precio: 10000,
-            imagen: "/Productos/Payasito.jpg",
-            categoria: "Snacks",
-        },
-        {
-            id: 9,
-            nombre: "Takoyaki",
-            descripcion: "Tradicionales bolitas japonesas de pulpo.",
-            precio: 18000,
-            imagen: "/Productos/Payasito.jpg",
-            categoria: "Snacks",
-        },
-    ];
+    // ==========================================
 
     let FiltrarProductos = $derived(
-        products.filter((product) => product.categoria === selectedCategory),
+        products.filter(
+            (product) =>
+                product.categoria === selectedCategory &&
+                product.activo === true,
+        ),
     );
+
+    // ==========================================
 
     // ==========================================
     // AGREGAR PRODUCTO AL CARRITO
@@ -507,7 +484,9 @@ TOTAL: ${formatPrice(cartTotal)}
         transform: scale(0.95);
     }
 
-    /* Número de productos */
+    /* =========================================================
+       Número de productos 
+       ========================================================= */
 
     .cart span {
         position: absolute;
@@ -796,7 +775,9 @@ TOTAL: ${formatPrice(cartTotal)}
         animation: slideCart 0.25s ease;
     }
 
-    /* Animación de entrada */
+    /* =========================================================
+       Animación de entrada 
+       ========================================================= */
 
     @keyframes slideCart {
         from {
@@ -969,7 +950,9 @@ TOTAL: ${formatPrice(cartTotal)}
         background: #f7f7f7;
     }
 
-    /* Imagen del producto */
+    /* =========================================================
+       Imagen del producto
+       ========================================================= */
 
     .cart-product-image {
         width: 70px;

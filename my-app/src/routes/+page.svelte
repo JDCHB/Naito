@@ -7,6 +7,7 @@
     let selectedCategory = $state("Ramens");
 
     // Productos que vienen de Supabase
+    // A
     let products = $state([]);
 
     // Cargar categorías y productos

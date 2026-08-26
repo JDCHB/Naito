@@ -25,6 +25,7 @@
     let categoriaId = $state("");
     let imagenUrl = $state("");
     let activo = $state(true);
+    let nivelPicante = $state(null);
 
     // ==========================================
     // CARGAR DATOS
@@ -104,6 +105,7 @@
         categoriaId = categorias.length > 0 ? categorias[0].id : "";
         imagenUrl = "";
         activo = true;
+        nivelPicante = null;
 
         formularioAbierto = true;
     }
@@ -122,6 +124,7 @@
         categoriaId = producto.categoria_id;
         imagenUrl = producto.imagen_url ?? "";
         activo = producto.activo;
+        nivelPicante = producto.nivel_picante ?? null;
 
         formularioAbierto = true;
     }
@@ -153,6 +156,7 @@
             categoria_id: Number(categoriaId),
             imagen_url: imagenUrl.trim(),
             activo: activo,
+            nivel_picante: nivelPicante,
         };
 
         // ======================================
@@ -465,6 +469,27 @@
                                     {categoria.nombre}
                                 </option>
                             {/each}
+                        </select>
+                    </label>
+
+                    <label>
+                        Nivel de picante
+
+                        <select bind:value={nivelPicante}>
+                            <option value={null}>No aplica</option>
+                            <option value={1}>🌶️ Nivel 1 — Picante leve</option>
+                            <option value={2}
+                                >🌶️🌶️ Nivel 2 — Picante medio</option
+                            >
+                            <option value={3}
+                                >🌶️🌶️🌶️ Nivel 3 — Picante fuerte</option
+                            >
+                            <option value={4}
+                                >🌶️🌶️🌶️🌶️ Nivel 4 — Demasiado picante</option
+                            >
+                            <option value={5}
+                                >🌶️🌶️🌶️🌶️🌶️ Nivel 5 — Super picante</option
+                            >
                         </select>
                     </label>
 

@@ -7,7 +7,6 @@
     let selectedCategory = $state("Ramens");
 
     // Productos que vienen de Supabase
-    // A
     let products = $state([]);
 
     // Cargar categorías y productos
@@ -48,6 +47,7 @@
                 imagen: producto.imagen_url,
                 categoria: categoria?.nombre ?? "",
                 activo: producto.activo,
+                nivel_picante: producto.nivel_picante,
             };
         });
 
@@ -65,7 +65,7 @@
     }
 
     // ==========================================
-
+    // Aqui filtramos los productos por categoria
     let FiltrarProductos = $derived(
         products.filter(
             (product) =>
@@ -75,6 +75,14 @@
     );
 
     // ==========================================
+    // Colocar el nivel de picante
+    function getNivelPicante(nivel) {
+        if (nivel === null || nivel === undefined) {
+            return "";
+        }
+
+        return "🌶️".repeat(nivel);
+    }
 
     // ==========================================
     // AGREGAR PRODUCTO AL CARRITO
@@ -183,6 +191,19 @@ TOTAL: ${formatPrice(cartTotal)}
 
         window.open(url, "_blank");
     }
+
+    // ==========================================
+    // DESCRIPCIÓN DEL PRODUCTO
+
+    let descripcionAbierta = $state(null);
+
+    function toggleDescripcion(productId) {
+        if (descripcionAbierta === productId) {
+            descripcionAbierta = null;
+        } else {
+            descripcionAbierta = productId;
+        }
+    }
 </script>
 
 <Sidebar onCategoryChange={changeCategory} />
@@ -192,6 +213,13 @@ TOTAL: ${formatPrice(cartTotal)}
 </svelte:head>
 
 <main class="content">
+    {#if descripcionAbierta !== null}
+        <button
+            class="description-backdrop"
+            aria-label="Cerrar descripción"
+            onclick={() => (descripcionAbierta = null)}
+        ></button>
+    {/if}
     <section class="catalog">
         <!-- ENCABEZADO -->
 
@@ -221,7 +249,12 @@ TOTAL: ${formatPrice(cartTotal)}
 
         <div class="products">
             {#each FiltrarProductos as product}
-                <article class="product-card">
+                <article
+                    class="product-card"
+                    class:description-active={descripcionAbierta === product.id}
+                    class:description-inactive={descripcionAbierta !== null &&
+                        descripcionAbierta !== product.id}
+                >
                     <!-- IMAGEN -->
 
                     <div class="product-image">
@@ -239,9 +272,28 @@ TOTAL: ${formatPrice(cartTotal)}
                             {product.nombre}
                         </h3>
 
-                        <p>
-                            {product.descripcion}
-                        </p>
+                        {#if product.nivel_picante !== null && product.nivel_picante !== undefined}
+                            <div class="spice-level">
+                                Nivel: {getNivelPicante(product.nivel_picante)}
+                            </div>
+                        {/if}
+
+                        <button
+                            class="description-button"
+                            onclick={() => toggleDescripcion(product.id)}
+                        >
+                            {descripcionAbierta === product.id
+                                ? "Ocultar descripción"
+                                : "Ver descripción"}
+                        </button>
+
+                        {#if descripcionAbierta === product.id}
+                            <div class="full-description">
+                                <p>
+                                    {product.descripcion}
+                                </p>
+                            </div>
+                        {/if}
 
                         <div class="product-bottom">
                             <strong>
@@ -548,9 +600,12 @@ TOTAL: ${formatPrice(cartTotal)}
 
         box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
 
+        position: relative;
+        z-index: 1;
         transition:
-            transform 0.25s ease,
-            box-shadow 0.25s ease;
+            transform 0.35s ease,
+            filter 0.35s ease,
+            opacity 0.35s ease;
     }
 
     .product-card:hover {
@@ -1461,6 +1516,166 @@ TOTAL: ${formatPrice(cartTotal)}
 
         .cart-product-info strong {
             font-size: 12px;
+        }
+    }
+
+    /* =========================================================
+       TEXTO DEL NIVEL PICANTE
+    ========================================================= */
+    .spice-level {
+        color: #000;
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin: 4px 0 8px;
+    }
+
+    .modal-spice {
+        color: #fff;
+        margin-bottom: 18px;
+    }
+    /* =========================================================
+       CSS DEL BOTON DEL MODAL
+    ========================================================= */
+
+    .description-button {
+        border: none;
+        background: transparent;
+        padding: 0;
+        margin: 6px 0 10px;
+
+        color: #b91c1c;
+        font-size: 0.85rem;
+        font-weight: 600;
+
+        cursor: pointer;
+        text-align: left;
+
+        transition: 0.2s ease;
+    }
+
+    .description-button:hover {
+        color: #e11d48;
+        text-decoration: underline;
+    }
+
+    /* ==========================================
+   DESCRIPCIÓN DEL PRODUCTO
+========================================== */
+
+    .product-card {
+        position: relative;
+        z-index: 1;
+
+        transition:
+            transform 0.35s ease,
+            filter 0.35s ease,
+            opacity 0.35s ease;
+    }
+
+    /* Tarjeta seleccionada */
+
+    .product-card.description-active {
+        z-index: 100;
+
+        animation: cardBounce 0.55s ease forwards;
+    }
+
+    /* Resto de tarjetas */
+
+    .product-card.description-inactive {
+        filter: blur(5px);
+        opacity: 0.3;
+        transform: scale(0.98);
+    }
+
+    /* ==========================================
+   ANIMACIÓN BOUNCE
+========================================== */
+
+    @keyframes cardBounce {
+        0% {
+            transform: scale(1);
+        }
+
+        30% {
+            transform: translateY(-18px) scale(1.04);
+        }
+
+        50% {
+            transform: translateY(5px) scale(1.02);
+        }
+
+        70% {
+            transform: translateY(-4px) scale(1.03);
+        }
+
+        100% {
+            transform: translateY(0) scale(1.03);
+        }
+    }
+
+    /* ==========================================
+   DESCRIPCIÓN
+========================================== */
+
+    .full-description {
+        margin-top: 12px;
+
+        animation: descriptionAppear 0.3s ease;
+    }
+
+    .full-description p {
+        margin: 0;
+
+        color: #333;
+        font-size: 0.9rem;
+        line-height: 1.6;
+    }
+
+    @keyframes descriptionAppear {
+        from {
+            opacity: 0;
+            transform: translateY(-8px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* ==========================================
+   FONDO DE DESCRIPCIÓN
+========================================== */
+
+    .description-backdrop {
+        position: fixed;
+        inset: 0;
+
+        z-index: 50;
+
+        width: 100%;
+        height: 100%;
+
+        border: none;
+
+        background: rgba(0, 0, 0, 0.45);
+
+        backdrop-filter: blur(7px);
+        -webkit-backdrop-filter: blur(7px);
+
+        cursor: default;
+
+        animation: backdropAppear 0.3s ease;
+    }
+
+    @keyframes backdropAppear {
+        from {
+            opacity: 0;
+        }
+
+        to {
+            opacity: 1;
         }
     }
 </style>

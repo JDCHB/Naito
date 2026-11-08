@@ -59,7 +59,12 @@
                 nivel_picante: producto.nivel_picante,
             };
         });
+
+        cargado = true;
     });
+
+    // Indica si ya terminaron de cargar los productos
+    let cargado = $state(false);
 
     // Controla si el carrito está abierto o no
     let cartOpen = $state(false);
@@ -82,13 +87,9 @@
     );
 
     // ==========================================
-    // Colocar el nivel de picante
-    function getNivelPicante(nivel) {
-        if (nivel === null || nivel === undefined) {
-            return "";
-        }
-
-        return "🌶️".repeat(nivel);
+    // Cuántas unidades de un producto hay en el carrito
+    function cantidadEnCarrito(productId) {
+        return cart.find((item) => item.id === productId)?.cantidad ?? 0;
     }
 
     // ==========================================
@@ -221,6 +222,12 @@ TOTAL: ${formatPrice(cartTotal)}
 
 <svelte:head>
     <title>Naito House</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+    <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap"
+    />
 </svelte:head>
 
 <main class="content">
@@ -241,17 +248,30 @@ TOTAL: ${formatPrice(cartTotal)}
                 <h2>
                     {selectedCategory}
                 </h2>
+
+                {#if cargado}
+                    <p class="count">
+                        {FiltrarProductos.length}
+                        {FiltrarProductos.length === 1 ? "producto" : "productos"}
+                    </p>
+                {/if}
             </div>
 
             <!-- CARRITO -->
 
-            <button class="cart" onclick={() => (cartOpen = true)}>
+            <button
+                class="cart"
+                aria-label="Abrir carrito"
+                onclick={() => (cartOpen = true)}
+            >
                 🛒
 
                 {#if cartCount > 0}
-                    <span>
-                        {cartCount}
-                    </span>
+                    {#key cartCount}
+                        <span>
+                            {cartCount}
+                        </span>
+                    {/key}
                 {/if}
             </button>
         </div>
@@ -259,9 +279,29 @@ TOTAL: ${formatPrice(cartTotal)}
         <!-- PRODUCTOS -->
 
         <div class="products">
-            {#each FiltrarProductos as product}
+            {#if !cargado}
+                {#each [1, 2, 3, 4] as n (n)}
+                    <div class="product-card skeleton" aria-hidden="true">
+                        <div class="product-image"></div>
+                        <div class="product-info">
+                            <span class="sk-line sk-title"></span>
+                            <span class="sk-line"></span>
+                            <span class="sk-line sk-short"></span>
+                        </div>
+                    </div>
+                {/each}
+            {:else if FiltrarProductos.length === 0}
+                <div class="empty-category">
+                    <span>🍜</span>
+                    <h3>Muy pronto</h3>
+                    <p>Estamos preparando productos para esta categoría.</p>
+                </div>
+            {/if}
+
+            {#each FiltrarProductos as product, i (product.id)}
                 <article
                     class="product-card"
+                    style="--i: {i}"
                     class:description-active={descripcionAbierta === product.id}
                     class:description-inactive={descripcionAbierta !== null &&
                         descripcionAbierta !== product.id}
@@ -284,18 +324,31 @@ TOTAL: ${formatPrice(cartTotal)}
                         </h3>
 
                         {#if product.nivel_picante !== null && product.nivel_picante !== undefined}
-                            <div class="spice-level">
-                                Nivel: {getNivelPicante(product.nivel_picante)}
+                            <div
+                                class="spice-level"
+                                aria-label="Picante nivel {product.nivel_picante} de 5"
+                            >
+                                <span class="spice-label">Picante</span>
+
+                                {#each [1, 2, 3, 4, 5] as n}
+                                    <span
+                                        class="chili"
+                                        class:on={n <= product.nivel_picante}
+                                        aria-hidden="true">🌶️</span
+                                    >
+                                {/each}
                             </div>
                         {/if}
 
                         <button
                             class="description-button"
+                            class:open={descripcionAbierta === product.id}
                             onclick={() => toggleDescripcion(product.id)}
                         >
                             {descripcionAbierta === product.id
                                 ? "Ocultar descripción"
                                 : "Ver descripción"}
+                            <span class="chevron" aria-hidden="true">›</span>
                         </button>
 
                         {#if descripcionAbierta === product.id}
@@ -313,9 +366,15 @@ TOTAL: ${formatPrice(cartTotal)}
 
                             <button
                                 class="add"
+                                class:in-cart={cantidadEnCarrito(product.id) > 0}
+                                aria-label="Agregar {product.nombre} al carrito"
                                 onclick={() => addToCart(product)}
                             >
-                                +
+                                {#if cantidadEnCarrito(product.id) > 0}
+                                    ✓ {cantidadEnCarrito(product.id)} · +
+                                {:else}
+                                    + Agregar
+                                {/if}
                             </button>
                         </div>
                     </div>
@@ -324,6 +383,16 @@ TOTAL: ${formatPrice(cartTotal)}
         </div>
     </section>
 </main>
+
+<!-- BARRA FLOTANTE DEL PEDIDO -->
+
+{#if cartCount > 0 && !cartOpen}
+    <button class="order-bar" onclick={() => (cartOpen = true)}>
+        <span class="order-bar-count">{cartCount}</span>
+        <span class="order-bar-label">Ver mi pedido</span>
+        <strong>{formatPrice(cartTotal)}</strong>
+    </button>
+{/if}
 
 <!-- FONDO DEL CARRITO -->
 
@@ -438,7 +507,7 @@ TOTAL: ${formatPrice(cartTotal)}
                 </button>
 
                 <button class="checkout" onclick={realizarPedido}>
-                    Realizar pedido
+                    Pedir por WhatsApp
                 </button>
             </div>
         {/if}
@@ -453,9 +522,11 @@ TOTAL: ${formatPrice(cartTotal)}
     :global(body) {
         margin: 0;
 
-        font-family: Arial, Helvetica, sans-serif;
+        font-family: "Zen Kaku Gothic New", Arial, Helvetica, sans-serif;
 
         color: #1b1b1b;
+
+        -webkit-font-smoothing: antialiased;
 
         /* FONDO */
         background-image: url("/Fondos/Fondo-gris.jpeg");
@@ -475,7 +546,7 @@ TOTAL: ${formatPrice(cartTotal)}
     .content {
         margin-left: 270px;
 
-        padding: 35px 45px;
+        padding: 35px 45px 110px;
 
         min-height: 100vh;
     }
@@ -491,25 +562,59 @@ TOTAL: ${formatPrice(cartTotal)}
         align-items: end;
 
         margin-bottom: 30px;
+
+        padding-bottom: 22px;
+
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     }
 
     .catalog-header h2 {
         margin: 0;
 
-        font-size: 30px;
+        font-family: "Dela Gothic One", "Zen Kaku Gothic New", sans-serif;
+        font-weight: 400;
+
+        font-size: 40px;
+        line-height: 1.1;
 
         color: white;
+
+        text-shadow: 0 3px 18px rgba(0, 0, 0, 0.45);
     }
 
     .small-title {
-        margin: 0 0 6px;
+        margin: 0 0 8px;
 
-        color: #e63946;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+
+        color: #ff6b75;
 
         font-size: 11px;
-        font-weight: bold;
+        font-weight: 700;
 
-        letter-spacing: 1.5px;
+        letter-spacing: 2.5px;
+    }
+
+    .small-title::before {
+        content: "";
+
+        width: 22px;
+        height: 2px;
+
+        border-radius: 2px;
+
+        background: #e63946;
+    }
+
+    .count {
+        margin: 8px 0 0;
+
+        color: rgba(255, 255, 255, 0.6);
+
+        font-size: 13px;
+        font-weight: 500;
     }
 
     /* =========================================================
@@ -555,25 +660,38 @@ TOTAL: ${formatPrice(cartTotal)}
     .cart span {
         position: absolute;
 
-        top: -5px;
-        right: -5px;
+        top: -6px;
+        right: -6px;
 
-        width: 20px;
-        height: 20px;
+        min-width: 22px;
+        height: 22px;
+
+        padding: 0 6px;
 
         display: flex;
-
         align-items: center;
         justify-content: center;
 
         background: #e63946;
-
         color: white;
 
-        border-radius: 50%;
+        border: 2px solid white;
+        border-radius: 999px;
 
         font-size: 11px;
-        font-weight: bold;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+
+        animation: badgePop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    @keyframes badgePop {
+        from {
+            transform: scale(0.4);
+        }
+        to {
+            transform: scale(1);
+        }
     }
 
     /* =========================================================
@@ -583,13 +701,10 @@ TOTAL: ${formatPrice(cartTotal)}
     .products {
         display: grid;
 
-        /*
-         * PC:
-         * 2 productos por fila
-         */
+        /* PC: 2 productos por fila */
         grid-template-columns: repeat(2, minmax(0, 1fr));
 
-        gap: 22px;
+        gap: 24px;
     }
 
     /* =========================================================
@@ -598,48 +713,51 @@ TOTAL: ${formatPrice(cartTotal)}
 
     .product-card {
         width: 100%;
-
-        min-height: 180px;
+        min-height: 190px;
 
         display: flex;
 
-        background: rgba(255, 255, 255, 0.96);
+        background: #fffdf9;
 
-        border-radius: 16px;
+        border-radius: 18px;
+        border: 1px solid rgba(255, 255, 255, 0.6);
 
         overflow: hidden;
 
-        box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
+        box-shadow:
+            0 1px 2px rgba(0, 0, 0, 0.12),
+            0 10px 30px rgba(0, 0, 0, 0.28);
 
         position: relative;
         z-index: 1;
+
+        /* Entrada escalonada de las tarjetas */
+        animation: cardIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+        animation-delay: calc(var(--i, 0) * 70ms);
+
         transition:
             transform 0.35s ease,
+            box-shadow 0.35s ease,
             filter 0.35s ease,
             opacity 0.35s ease;
+    }
+
+    @keyframes cardIn {
+        from {
+            opacity: 0;
+            transform: translateY(14px);
+        }
     }
 
     .product-card:hover {
         transform: translateY(-4px);
 
-        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.15);
+        box-shadow:
+            0 0 0 2px rgba(230, 57, 70, 0.55),
+            0 18px 40px rgba(0, 0, 0, 0.35);
     }
 
-    /* =========================================================
-       ALTERNAR IMAGEN
-
-       Producto 1:
-       INFORMACIÓN | IMAGEN
-
-       Producto 2:
-       IMAGEN | INFORMACIÓN
-
-       Producto 3:
-       INFORMACIÓN | IMAGEN
-
-       Producto 4:
-       IMAGEN | INFORMACIÓN
-    ========================================================= */
+    /* Alternar imagen: INFO | IMAGEN, IMAGEN | INFO... */
 
     .product-card:nth-child(even) {
         flex-direction: row-reverse;
@@ -650,44 +768,41 @@ TOTAL: ${formatPrice(cartTotal)}
     ========================================================= */
 
     .product-image {
-        width: 27%;
-
-        min-height: 180px;
+        width: 36%;
+        min-height: 190px;
 
         flex-shrink: 0;
 
         display: flex;
-
         align-items: center;
         justify-content: center;
 
         background: #eee9e2;
 
         overflow: hidden;
+
+        position: relative;
     }
 
     .product-image img {
+        position: absolute;
+        inset: 0;
+
         width: 100%;
         height: 100%;
 
         display: block;
 
-        /*
-         * La imagen ocupa solamente
-         * el espacio destinado a ella.
-         */
         object-fit: cover;
 
-        transition: transform 0.4s ease;
+        transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
     }
 
     .product-card:hover .product-image img {
-        transform: scale(1.04);
+        transform: scale(1.06);
     }
 
-    /* Para cuando todavía tengas algún producto
-       usando un emoji */
-
+    /* Para productos que usan un emoji en vez de imagen */
     .product-image span {
         font-size: 55px;
     }
@@ -698,24 +813,25 @@ TOTAL: ${formatPrice(cartTotal)}
 
     .product-info {
         flex: 1;
-
         min-width: 0;
 
-        padding: 22px;
+        padding: 22px 22px 20px;
 
         display: flex;
-
         flex-direction: column;
-
         justify-content: center;
     }
 
     .product-info h3 {
-        margin: 0 0 8px;
+        margin: 0 0 10px;
 
         font-size: 19px;
+        font-weight: 900;
+        line-height: 1.25;
 
         color: #1b1b1b;
+
+        text-wrap: balance;
     }
 
     .product-info p {
@@ -726,7 +842,6 @@ TOTAL: ${formatPrice(cartTotal)}
         color: #777;
 
         font-size: 13px;
-
         line-height: 1.5;
     }
 
@@ -736,42 +851,52 @@ TOTAL: ${formatPrice(cartTotal)}
 
     .product-bottom {
         display: flex;
-
         align-items: center;
-
         justify-content: space-between;
+        gap: 10px;
+
+        margin-top: auto;
+        padding-top: 14px;
+
+        border-top: 1px dashed #e7e1d8;
     }
 
     .product-bottom strong {
-        font-size: 17px;
+        font-size: 21px;
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
 
         color: #1b1b1b;
     }
 
     /* =========================================================
-       BOTÓN +
+       BOTÓN AGREGAR
     ========================================================= */
 
     .add {
-        width: 36px;
-        height: 36px;
+        height: 38px;
+
+        padding: 0 16px;
 
         border: none;
-
-        border-radius: 9px;
+        border-radius: 10px;
 
         background: #e63946;
-
         color: white;
 
-        font-size: 20px;
+        font-family: inherit;
+        font-size: 14px;
+        font-weight: 700;
+        white-space: nowrap;
 
         cursor: pointer;
 
         display: flex;
-
         align-items: center;
         justify-content: center;
+        gap: 6px;
+
+        box-shadow: 0 4px 12px rgba(230, 57, 70, 0.3);
 
         transition:
             transform 0.2s ease,
@@ -782,13 +907,24 @@ TOTAL: ${formatPrice(cartTotal)}
     .add:hover {
         background: #c92f3b;
 
-        transform: scale(1.08);
+        transform: translateY(-1px);
 
-        box-shadow: 0 5px 15px rgba(230, 57, 70, 0.3);
+        box-shadow: 0 7px 18px rgba(230, 57, 70, 0.4);
     }
 
     .add:active {
-        transform: scale(0.95);
+        transform: scale(0.96);
+    }
+
+    /* Cuando el producto ya está en el carrito */
+    .add.in-cart {
+        background: #1b1b1b;
+
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    }
+
+    .add.in-cart:hover {
+        background: #333;
     }
 
     /* =========================================================
@@ -1277,7 +1413,7 @@ TOTAL: ${formatPrice(cartTotal)}
         .content {
             margin-left: 220px;
 
-            padding: 30px;
+            padding: 30px 30px 110px;
         }
 
         /*
@@ -1295,7 +1431,7 @@ TOTAL: ${formatPrice(cartTotal)}
         }
 
         .product-image {
-            width: 28%;
+            width: 34%;
 
             min-height: 180px;
         }
@@ -1309,7 +1445,7 @@ TOTAL: ${formatPrice(cartTotal)}
         .content {
             margin-left: 0;
 
-            padding: 90px 20px 25px;
+            padding: 90px 20px 110px;
         }
 
         .catalog-header {
@@ -1331,7 +1467,7 @@ TOTAL: ${formatPrice(cartTotal)}
         }
 
         .product-image {
-            width: 30%;
+            width: 36%;
 
             min-height: 170px;
         }
@@ -1365,7 +1501,7 @@ TOTAL: ${formatPrice(cartTotal)}
 
     @media (max-width: 550px) {
         .content {
-            padding: 85px 15px 25px;
+            padding: 85px 15px 110px;
         }
 
         .catalog-header h2 {
@@ -1390,9 +1526,9 @@ TOTAL: ${formatPrice(cartTotal)}
         }
 
         .product-image {
-            width: 32%;
+            width: 38%;
 
-            min-height: 150px;
+            min-height: 160px;
         }
 
         .product-info {
@@ -1418,10 +1554,11 @@ TOTAL: ${formatPrice(cartTotal)}
         }
 
         .add {
-            width: 33px;
-            height: 33px;
+            height: 34px;
 
-            font-size: 18px;
+            padding: 0 12px;
+
+            font-size: 13px;
         }
 
         /* -------------------------
@@ -1478,9 +1615,9 @@ TOTAL: ${formatPrice(cartTotal)}
         }
 
         .product-image {
-            width: 31%;
+            width: 38%;
 
-            min-height: 140px;
+            min-height: 150px;
         }
 
         .product-info {
@@ -1502,10 +1639,11 @@ TOTAL: ${formatPrice(cartTotal)}
         }
 
         .add {
-            width: 30px;
-            height: 30px;
+            height: 32px;
 
-            font-size: 17px;
+            padding: 0 10px;
+
+            font-size: 12px;
         }
 
         /* Carrito */
@@ -1534,54 +1672,94 @@ TOTAL: ${formatPrice(cartTotal)}
        TEXTO DEL NIVEL PICANTE
     ========================================================= */
     .spice-level {
-        color: #000;
-        font-size: 0.85rem;
-        font-weight: 600;
-        margin: 4px 0 8px;
+        display: flex;
+        align-items: center;
+        gap: 2px;
+
+        margin: 0 0 8px;
     }
 
-    .modal-spice {
-        color: #fff;
-        margin-bottom: 18px;
+    .spice-label {
+        margin-right: 6px;
+
+        padding: 2px 8px;
+
+        border-radius: 999px;
+
+        background: #fdecee;
+        color: #b91c1c;
+
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
     }
+
+    .chili {
+        font-size: 13px;
+        line-height: 1;
+
+        filter: grayscale(1);
+        opacity: 0.25;
+    }
+
+    .chili.on {
+        filter: none;
+        opacity: 1;
+    }
+
     /* =========================================================
-       CSS DEL BOTON DEL MODAL
+       BOTÓN VER DESCRIPCIÓN
     ========================================================= */
 
     .description-button {
+        align-self: flex-start;
+
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+
         border: none;
         background: transparent;
         padding: 0;
-        margin: 6px 0 10px;
+        margin: 2px 0 12px;
 
         color: #b91c1c;
+
+        font-family: inherit;
         font-size: 0.85rem;
-        font-weight: 600;
+        font-weight: 700;
 
         cursor: pointer;
         text-align: left;
 
-        transition: 0.2s ease;
+        transition: color 0.2s ease;
     }
 
     .description-button:hover {
-        color: #e11d48;
-        text-decoration: underline;
+        color: #e63946;
+    }
+
+    .chevron {
+        display: inline-block;
+
+        font-size: 1.1rem;
+        line-height: 1;
+
+        transition: transform 0.25s ease;
+    }
+
+    .description-button:hover .chevron {
+        transform: translateX(2px);
+    }
+
+    .description-button.open .chevron {
+        transform: rotate(90deg);
     }
 
     /* ==========================================
    DESCRIPCIÓN DEL PRODUCTO
 ========================================== */
-
-    .product-card {
-        position: relative;
-        z-index: 1;
-
-        transition:
-            transform 0.35s ease,
-            filter 0.35s ease,
-            opacity 0.35s ease;
-    }
 
     /* Tarjeta seleccionada */
 
@@ -1687,6 +1865,214 @@ TOTAL: ${formatPrice(cartTotal)}
 
         to {
             opacity: 1;
+        }
+    }
+    /* =========================================================
+       CATEGORÍA SIN PRODUCTOS
+    ========================================================= */
+
+    .empty-category {
+        grid-column: 1 / -1;
+
+        padding: 60px 20px;
+
+        text-align: center;
+
+        border: 1px dashed rgba(255, 255, 255, 0.2);
+        border-radius: 18px;
+
+        background: rgba(0, 0, 0, 0.35);
+
+        color: white;
+    }
+
+    .empty-category span {
+        font-size: 44px;
+    }
+
+    .empty-category h3 {
+        margin: 10px 0 6px;
+
+        font-family: "Dela Gothic One", sans-serif;
+        font-weight: 400;
+        font-size: 22px;
+    }
+
+    .empty-category p {
+        margin: 0;
+
+        color: rgba(255, 255, 255, 0.65);
+
+        font-size: 14px;
+    }
+
+    /* =========================================================
+       TARJETAS DE CARGA (SKELETON)
+    ========================================================= */
+
+    .product-card.skeleton {
+        animation: none;
+    }
+
+    .product-card.skeleton:hover {
+        transform: none;
+    }
+
+    .skeleton .product-image,
+    .sk-line {
+        background: linear-gradient(90deg, #eee9e2 25%, #f7f3ee 50%, #eee9e2 75%);
+        background-size: 200% 100%;
+
+        animation: shimmer 1.3s linear infinite;
+    }
+
+    .sk-line {
+        display: block;
+
+        height: 12px;
+        width: 70%;
+
+        margin-bottom: 12px;
+
+        border-radius: 6px;
+    }
+
+    .sk-title {
+        height: 18px;
+        width: 85%;
+    }
+
+    .sk-short {
+        width: 40%;
+        margin-top: 18px;
+    }
+
+    @keyframes shimmer {
+        to {
+            background-position: -200% 0;
+        }
+    }
+
+    /* =========================================================
+       BARRA FLOTANTE "VER MI PEDIDO"
+    ========================================================= */
+
+    .order-bar {
+        position: fixed;
+
+        right: 30px;
+        bottom: 26px;
+
+        z-index: 900;
+
+        display: flex;
+        align-items: center;
+        gap: 12px;
+
+        padding: 10px 12px 10px 10px;
+
+        border: none;
+        border-radius: 999px;
+
+        background: #e63946;
+        color: white;
+
+        font-family: inherit;
+        font-size: 15px;
+
+        cursor: pointer;
+
+        box-shadow:
+            0 10px 30px rgba(230, 57, 70, 0.45),
+            0 2px 6px rgba(0, 0, 0, 0.3);
+
+        animation: barIn 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+
+        transition:
+            transform 0.2s ease,
+            background 0.2s ease;
+    }
+
+    .order-bar:hover {
+        background: #c92f3b;
+
+        transform: translateY(-2px);
+    }
+
+    .order-bar-count {
+        min-width: 32px;
+        height: 32px;
+
+        padding: 0 8px;
+
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        border-radius: 999px;
+
+        background: white;
+        color: #e63946;
+
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .order-bar-label {
+        font-weight: 700;
+    }
+
+    .order-bar strong {
+        padding-left: 12px;
+
+        border-left: 1px solid rgba(255, 255, 255, 0.35);
+
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+    }
+
+    @keyframes barIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+    }
+
+    @media (max-width: 750px) {
+        .order-bar {
+            left: 16px;
+            right: 16px;
+            bottom: max(16px, env(safe-area-inset-bottom));
+
+            justify-content: space-between;
+        }
+
+        .order-bar-label {
+            flex: 1;
+            text-align: left;
+        }
+    }
+
+    /* =========================================================
+       FOCO VISIBLE (TECLADO)
+    ========================================================= */
+
+    button:focus-visible {
+        outline: 3px solid #ffb4ba;
+        outline-offset: 2px;
+    }
+
+    /* =========================================================
+       MENOS MOVIMIENTO SI EL USUARIO LO PREFIERE
+    ========================================================= */
+
+    @media (prefers-reduced-motion: reduce) {
+        .product-card,
+        .order-bar,
+        .cart span,
+        .skeleton .product-image,
+        .sk-line {
+            animation: none;
         }
     }
 </style>

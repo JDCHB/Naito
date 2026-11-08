@@ -9,7 +9,52 @@
     let categorias = $state([]);
 
     let loading = $state(true);
+
+    // ==========================================
+    // AVISOS (TOAST)
+    // ==========================================
+
     let mensaje = $state("");
+    let tipoMensaje = $state("ok"); // "ok" | "error"
+    let temporizadorMensaje;
+
+    function notificar(texto, tipo = "ok") {
+        mensaje = texto;
+        tipoMensaje = tipo;
+
+        clearTimeout(temporizadorMensaje);
+        temporizadorMensaje = setTimeout(() => (mensaje = ""), 3500);
+    }
+
+    // ==========================================
+    // BÚSQUEDA Y FILTROS
+    // ==========================================
+
+    let busqueda = $state("");
+    let filtroCategoria = $state("todas");
+
+    function normalizar(texto) {
+        return (texto ?? "")
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[̀-ͯ]/g, "");
+    }
+
+    let productosFiltrados = $derived(
+        productos.filter((producto) => {
+            const coincideCategoria =
+                filtroCategoria === "todas" ||
+                producto.categoria_id === filtroCategoria;
+
+            const coincideBusqueda = normalizar(producto.nombre).includes(
+                normalizar(busqueda.trim()),
+            );
+
+            return coincideCategoria && coincideBusqueda;
+        }),
+    );
+
+    let totalActivos = $derived(productos.filter((p) => p.activo).length);
 
     // ==========================================
     // FORMULARIO
@@ -17,6 +62,7 @@
 
     let formularioAbierto = $state(false);
     let editando = $state(false);
+    let guardando = $state(false);
 
     let productoId = $state(null);
     let nombre = $state("");
@@ -26,6 +72,16 @@
     let imagenUrl = $state("");
     let activo = $state(true);
     let nivelPicante = $state(null);
+    let imagenRota = $state(false);
+
+    const nivelesPicante = [
+        { valor: null, texto: "No aplica" },
+        { valor: 1, texto: "Leve" },
+        { valor: 2, texto: "Medio" },
+        { valor: 3, texto: "Fuerte" },
+        { valor: 4, texto: "Muy picante" },
+        { valor: 5, texto: "Súper picante" },
+    ];
 
     // ==========================================
     // CARGAR DATOS
@@ -57,7 +113,7 @@
         if (categoriasError) {
             console.error("Error obteniendo categorías:", categoriasError);
 
-            mensaje = "Error cargando categorías.";
+            notificar("Error cargando categorías.", "error");
             return;
         }
 
@@ -72,7 +128,7 @@
         if (productosError) {
             console.error("Error obteniendo productos:", productosError);
 
-            mensaje = "Error cargando productos.";
+            notificar("Error cargando productos.", "error");
             return;
         }
 
@@ -91,6 +147,10 @@
         return categoria?.nombre ?? "Sin categoría";
     }
 
+    function formatPrice(valor) {
+        return `$${Number(valor).toLocaleString("es-CO")}`;
+    }
+
     // ==========================================
     // ABRIR FORMULARIO NUEVO
     // ==========================================
@@ -102,10 +162,16 @@
         nombre = "";
         descripcion = "";
         precio = "";
-        categoriaId = categorias.length > 0 ? categorias[0].id : "";
+        categoriaId =
+            filtroCategoria !== "todas"
+                ? filtroCategoria
+                : categorias.length > 0
+                  ? categorias[0].id
+                  : "";
         imagenUrl = "";
         activo = true;
         nivelPicante = null;
+        imagenRota = false;
 
         formularioAbierto = true;
     }
@@ -125,6 +191,7 @@
         imagenUrl = producto.imagen_url ?? "";
         activo = producto.activo;
         nivelPicante = producto.nivel_picante ?? null;
+        imagenRota = false;
 
         formularioAbierto = true;
     }
@@ -134,6 +201,8 @@
     // ==========================================
 
     function cerrarFormulario() {
+        if (guardando) return;
+
         formularioAbierto = false;
     }
 
@@ -142,10 +211,8 @@
     // ==========================================
 
     async function guardarProducto() {
-        mensaje = "";
-
         if (!nombre.trim() || !descripcion.trim() || !precio || !categoriaId) {
-            mensaje = "Completa todos los campos obligatorios.";
+            notificar("Completa todos los campos obligatorios.", "error");
             return;
         }
 
@@ -159,6 +226,8 @@
             nivel_picante: nivelPicante,
         };
 
+        guardando = true;
+
         // ======================================
         // EDITAR
         // ======================================
@@ -171,16 +240,18 @@
                 .select()
                 .single();
 
+            guardando = false;
+
             if (error) {
                 console.error("Error actualizando producto:", error);
 
-                mensaje = "No se pudo actualizar el producto.";
+                notificar("No se pudo actualizar el producto.", "error");
                 return;
             }
 
             productos = productos.map((p) => (p.id === productoId ? data : p));
 
-            mensaje = "Producto actualizado correctamente.";
+            notificar("Producto actualizado correctamente.");
         }
 
         // ======================================
@@ -193,16 +264,18 @@
                 .select()
                 .single();
 
+            guardando = false;
+
             if (error) {
                 console.error("Error creando producto:", error);
 
-                mensaje = "No se pudo crear el producto.";
+                notificar("No se pudo crear el producto.", "error");
                 return;
             }
 
             productos = [...productos, data];
 
-            mensaje = "Producto creado correctamente.";
+            notificar("Producto creado correctamente.");
         }
 
         formularioAbierto = false;
@@ -225,7 +298,7 @@
         if (error) {
             console.error("Error cambiando estado:", error);
 
-            mensaje = "No se pudo cambiar el estado.";
+            notificar("No se pudo cambiar el estado.", "error");
             return;
         }
 
@@ -238,16 +311,20 @@
                 : p,
         );
 
-        mensaje = nuevoEstado ? "Producto activado." : "Producto desactivado.";
+        notificar(
+            nuevoEstado
+                ? `"${producto.nombre}" ahora se ve en el catálogo.`
+                : `"${producto.nombre}" quedó oculto del catálogo.`,
+        );
     }
 
     // ==========================================
     // ELIMINAR
     // ==========================================
 
-    async function eliminarProducto(id) {
+    async function eliminarProducto(producto) {
         const confirmar = confirm(
-            "¿Seguro que quieres eliminar este producto?",
+            `¿Seguro que quieres eliminar "${producto.nombre}"? Esta acción no se puede deshacer.`,
         );
 
         if (!confirmar) return;
@@ -255,18 +332,18 @@
         const { error } = await supabase
             .from("productos")
             .delete()
-            .eq("id", id);
+            .eq("id", producto.id);
 
         if (error) {
             console.error("Error eliminando producto:", error);
 
-            mensaje = "No se pudo eliminar el producto.";
+            notificar("No se pudo eliminar el producto.", "error");
             return;
         }
 
-        productos = productos.filter((producto) => producto.id !== id);
+        productos = productos.filter((p) => p.id !== producto.id);
 
-        mensaje = "Producto eliminado correctamente.";
+        notificar("Producto eliminado correctamente.");
     }
 
     // ==========================================
@@ -279,6 +356,22 @@
         goto("/admin/login");
     }
 </script>
+
+<svelte:head>
+    <title>Panel · Naito House</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+    <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap"
+    />
+</svelte:head>
+
+<svelte:window
+    onkeydown={(event) => {
+        if (event.key === "Escape" && formularioAbierto) cerrarFormulario();
+    }}
+/>
 
 {#if loading}
     <div class="loading-screen">
@@ -336,24 +429,61 @@
     </div>
 {:else if user}
     <main>
-        <header>
-            <div>
-                <h1>Panel Administrativo</h1>
+        <!-- ENCABEZADO -->
 
-                <p>
-                    Sesión:
-                    <strong>{user.email}</strong>
-                </p>
+        <header>
+            <div class="brand">
+                <img src="/Logo.jpeg" alt="Naito House" />
+
+                <div>
+                    <p class="eyebrow">Naito House</p>
+                    <h1>Panel administrativo</h1>
+                </div>
             </div>
 
-            <button onclick={cerrarSesion}> Cerrar sesión </button>
+            <div class="header-actions">
+                <span class="session" title={user.email}>
+                    <span class="dot"></span>
+                    {user.email}
+                </span>
+
+                <a class="btn-ghost" href="/" target="_blank" rel="noopener">
+                    Ver catálogo ↗
+                </a>
+
+                <button class="btn-ghost" onclick={cerrarSesion}>
+                    Cerrar sesión
+                </button>
+            </div>
         </header>
 
-        {#if mensaje}
-            <div class="mensaje">
-                {mensaje}
+        <!-- RESUMEN -->
+
+        <div class="stats">
+            <div class="stat">
+                <span class="stat-value">{productos.length}</span>
+                <span class="stat-label">Productos</span>
             </div>
-        {/if}
+
+            <div class="stat">
+                <span class="stat-value ok">{totalActivos}</span>
+                <span class="stat-label">Visibles en el catálogo</span>
+            </div>
+
+            <div class="stat">
+                <span class="stat-value muted">
+                    {productos.length - totalActivos}
+                </span>
+                <span class="stat-label">Ocultos</span>
+            </div>
+
+            <div class="stat">
+                <span class="stat-value">{categorias.length}</span>
+                <span class="stat-label">Categorías</span>
+            </div>
+        </div>
+
+        <!-- PRODUCTOS -->
 
         <section>
             <div class="section-header">
@@ -364,159 +494,332 @@
                 </button>
             </div>
 
-            <div class="tabla-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Producto</th>
-                            <th>Precio</th>
-                            <th>Categoría</th>
-                            <th>Estado</th>
-                            <th>Acciones</th>
-                        </tr>
-                    </thead>
+            <div class="toolbar">
+                <label class="search">
+                    <span aria-hidden="true">⌕</span>
 
-                    <tbody>
-                        {#each productos as producto}
-                            <tr>
-                                <td>
-                                    <strong>
-                                        {producto.nombre}
-                                    </strong>
-                                </td>
+                    <input
+                        type="search"
+                        placeholder="Buscar producto..."
+                        aria-label="Buscar producto"
+                        bind:value={busqueda}
+                    />
+                </label>
 
-                                <td>
-                                    ${Number(producto.precio).toLocaleString(
-                                        "es-CO",
-                                    )}
-                                </td>
+                <div class="chips" role="group" aria-label="Filtrar por categoría">
+                    <button
+                        class="chip"
+                        class:selected={filtroCategoria === "todas"}
+                        onclick={() => (filtroCategoria = "todas")}
+                    >
+                        Todas
+                    </button>
 
-                                <td>
-                                    {obtenerCategoria(producto.categoria_id)}
-                                </td>
+                    {#each categorias as categoria (categoria.id)}
+                        <button
+                            class="chip"
+                            class:selected={filtroCategoria === categoria.id}
+                            onclick={() => (filtroCategoria = categoria.id)}
+                        >
+                            {categoria.nombre}
+                        </button>
+                    {/each}
+                </div>
+            </div>
 
-                                <td>
-                                    {#if producto.activo}
-                                        <span class="activo"> ● Activo </span>
-                                    {:else}
-                                        <span class="inactivo">
-                                            ● Inactivo
-                                        </span>
-                                    {/if}
-                                </td>
+            <!-- LISTA -->
 
-                                <td class="acciones">
-                                    <button
-                                        onclick={() => cambiarEstado(producto)}
+            <div class="lista">
+                <div class="fila fila-head" aria-hidden="true">
+                    <span></span>
+                    <span>Producto</span>
+                    <span>Categoría</span>
+                    <span>Precio</span>
+                    <span>Picante</span>
+                    <span>Visible</span>
+                    <span></span>
+                </div>
+
+                {#each productosFiltrados as producto (producto.id)}
+                    <div class="fila" class:oculto={!producto.activo}>
+                        <div class="thumb">
+                            {#if producto.imagen_url?.startsWith("/")}
+                                <img
+                                    src={producto.imagen_url}
+                                    alt=""
+                                    loading="lazy"
+                                />
+                            {:else}
+                                <span>🍜</span>
+                            {/if}
+                        </div>
+
+                        <div class="info">
+                            <strong>{producto.nombre}</strong>
+                            <small>{producto.descripcion}</small>
+                        </div>
+
+                        <div>
+                            <span class="pill">
+                                {obtenerCategoria(producto.categoria_id)}
+                            </span>
+                        </div>
+
+                        <div class="precio">{formatPrice(producto.precio)}</div>
+
+                        <div class="picante">
+                            {#if producto.nivel_picante}
+                                {#each [1, 2, 3, 4, 5] as n}
+                                    <span
+                                        class="chili"
+                                        class:on={n <= producto.nivel_picante}
+                                        >🌶️</span
                                     >
-                                        {producto.activo
-                                            ? "Desactivar"
-                                            : "Activar"}
-                                    </button>
+                                {/each}
+                            {:else}
+                                <span class="na">—</span>
+                            {/if}
+                        </div>
 
-                                    <button
-                                        onclick={() => editarProducto(producto)}
-                                    >
-                                        Editar
-                                    </button>
+                        <div class="estado">
+                            <button
+                                class="switch"
+                                role="switch"
+                                aria-checked={producto.activo}
+                                aria-label="Mostrar {producto.nombre} en el catálogo"
+                                onclick={() => cambiarEstado(producto)}
+                            >
+                                <span class="knob"></span>
+                            </button>
 
-                                    <button
-                                        class="btn-danger"
-                                        onclick={() =>
-                                            eliminarProducto(producto.id)}
-                                    >
-                                        Eliminar
-                                    </button>
-                                </td>
-                            </tr>
-                        {/each}
-                    </tbody>
-                </table>
+                            <span class="estado-texto">
+                                {producto.activo ? "Visible" : "Oculto"}
+                            </span>
+                        </div>
+
+                        <div class="acciones">
+                            <button onclick={() => editarProducto(producto)}>
+                                ✎ Editar
+                            </button>
+
+                            <button
+                                class="btn-danger"
+                                aria-label="Eliminar {producto.nombre}"
+                                title="Eliminar"
+                                onclick={() => eliminarProducto(producto)}
+                            >
+                                🗑
+                            </button>
+                        </div>
+                    </div>
+                {:else}
+                    <div class="vacio">
+                        <span>🔍</span>
+                        <p>
+                            {productos.length === 0
+                                ? "Todavía no hay productos. Crea el primero."
+                                : "No hay productos que coincidan con la búsqueda."}
+                        </p>
+                    </div>
+                {/each}
             </div>
         </section>
 
+        <!-- FORMULARIO -->
+
         {#if formularioAbierto}
             <div class="modal">
-                <div class="modal-content">
-                    <h2>
-                        {editando ? "Editar producto" : "Nuevo producto"}
-                    </h2>
+                <button
+                    class="modal-backdrop"
+                    aria-label="Cerrar formulario"
+                    onclick={cerrarFormulario}
+                ></button>
 
-                    <label>
-                        Nombre
+                <form
+                    class="modal-content"
+                    onsubmit={(event) => {
+                        event.preventDefault();
+                        guardarProducto();
+                    }}
+                >
+                    <div class="modal-header">
+                        <h2>
+                            {editando ? "Editar producto" : "Nuevo producto"}
+                        </h2>
 
-                        <input type="text" bind:value={nombre} />
-                    </label>
-
-                    <label>
-                        Descripción
-
-                        <textarea bind:value={descripcion}></textarea>
-                    </label>
-
-                    <label>
-                        Precio
-
-                        <input type="number" min="0" bind:value={precio} />
-                    </label>
-
-                    <label>
-                        Categoría
-
-                        <select bind:value={categoriaId}>
-                            {#each categorias as categoria}
-                                <option value={categoria.id}>
-                                    {categoria.nombre}
-                                </option>
-                            {/each}
-                        </select>
-                    </label>
-
-                    <label>
-                        Nivel de picante
-
-                        <select bind:value={nivelPicante}>
-                            <option value={null}>No aplica</option>
-                            <option value={1}>🌶️ Nivel 1 — Picante leve</option>
-                            <option value={2}
-                                >🌶️🌶️ Nivel 2 — Picante medio</option
-                            >
-                            <option value={3}
-                                >🌶️🌶️🌶️ Nivel 3 — Picante fuerte</option
-                            >
-                            <option value={4}
-                                >🌶️🌶️🌶️🌶️ Nivel 4 — Demasiado picante</option
-                            >
-                            <option value={5}
-                                >🌶️🌶️🌶️🌶️🌶️ Nivel 5 — Super picante</option
-                            >
-                        </select>
-                    </label>
-
-                    <label>
-                        URL de imagen
-
-                        <input
-                            type="text"
-                            bind:value={imagenUrl}
-                            placeholder="/Productos/imagen.jpg"
-                        />
-                    </label>
-
-                    <label class="checkbox">
-                        <input type="checkbox" bind:checked={activo} />
-
-                        Producto activo
-                    </label>
-
-                    <div class="modal-actions">
-                        <button onclick={cerrarFormulario}> Cancelar </button>
-
-                        <button class="btn-primary" onclick={guardarProducto}>
-                            {editando ? "Guardar cambios" : "Crear producto"}
+                        <button
+                            type="button"
+                            class="close"
+                            aria-label="Cerrar"
+                            onclick={cerrarFormulario}
+                        >
+                            ×
                         </button>
                     </div>
-                </div>
+
+                    <div class="modal-body">
+                        <label>
+                            Nombre *
+
+                            <input
+                                type="text"
+                                bind:value={nombre}
+                                placeholder="Ej: Buldak Carbonara"
+                                required
+                            />
+                        </label>
+
+                        <label>
+                            Descripción *
+
+                            <textarea
+                                bind:value={descripcion}
+                                placeholder="Cuéntale al cliente qué trae y a qué sabe."
+                                required
+                            ></textarea>
+                        </label>
+
+                        <div class="dos-columnas">
+                            <label>
+                                Precio *
+
+                                <span class="input-precio">
+                                    <span>$</span>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="100"
+                                        bind:value={precio}
+                                        placeholder="19000"
+                                        required
+                                    />
+                                </span>
+                            </label>
+
+                            <label>
+                                Categoría *
+
+                                <select bind:value={categoriaId}>
+                                    {#each categorias as categoria (categoria.id)}
+                                        <option value={categoria.id}>
+                                            {categoria.nombre}
+                                        </option>
+                                    {/each}
+                                </select>
+                            </label>
+                        </div>
+
+                        <fieldset>
+                            <legend>Nivel de picante</legend>
+
+                            <div class="niveles">
+                                {#each nivelesPicante as nivel}
+                                    <button
+                                        type="button"
+                                        class="nivel"
+                                        class:selected={nivelPicante ===
+                                            nivel.valor}
+                                        onclick={() =>
+                                            (nivelPicante = nivel.valor)}
+                                    >
+                                        <span class="nivel-chiles">
+                                            {nivel.valor
+                                                ? "🌶️".repeat(nivel.valor)
+                                                : "🚫"}
+                                        </span>
+                                        <span>{nivel.texto}</span>
+                                    </button>
+                                {/each}
+                            </div>
+                        </fieldset>
+
+                        <div class="imagen-campo">
+                            <div class="preview">
+                                {#if imagenUrl.trim() && !imagenRota}
+                                    <img
+                                        src={imagenUrl}
+                                        alt="Vista previa"
+                                        onerror={() => (imagenRota = true)}
+                                    />
+                                {:else}
+                                    <span>
+                                        {imagenRota ? "⚠️" : "🖼️"}
+                                    </span>
+                                {/if}
+                            </div>
+
+                            <label>
+                                Ruta de la imagen
+
+                                <input
+                                    type="text"
+                                    bind:value={imagenUrl}
+                                    oninput={() => (imagenRota = false)}
+                                    placeholder="/Productos/imagen.jpg"
+                                />
+
+                                {#if imagenRota}
+                                    <small class="ayuda error">
+                                        No se encontró la imagen en esa ruta.
+                                    </small>
+                                {:else}
+                                    <small class="ayuda">
+                                        La imagen debe estar en la carpeta
+                                        static/Productos.
+                                    </small>
+                                {/if}
+                            </label>
+                        </div>
+
+                        <label class="toggle">
+                            <input type="checkbox" bind:checked={activo} />
+
+                            <span class="switch-visual" aria-hidden="true">
+                                <span class="knob"></span>
+                            </span>
+
+                            <span>
+                                <strong>Visible en el catálogo</strong>
+                                <small>
+                                    Si lo apagas, el producto queda guardado
+                                    pero los clientes no lo ven.
+                                </small>
+                            </span>
+                        </label>
+                    </div>
+
+                    <div class="modal-actions">
+                        <button
+                            type="button"
+                            class="btn-ghost"
+                            onclick={cerrarFormulario}
+                            disabled={guardando}
+                        >
+                            Cancelar
+                        </button>
+
+                        <button
+                            type="submit"
+                            class="btn-primary"
+                            disabled={guardando}
+                        >
+                            {#if guardando}
+                                Guardando...
+                            {:else}
+                                {editando ? "Guardar cambios" : "Crear producto"}
+                            {/if}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        {/if}
+
+        <!-- AVISO -->
+
+        {#if mensaje}
+            <div class="toast" class:error={tipoMensaje === "error"} role="status">
+                <span>{tipoMensaje === "error" ? "⚠️" : "✓"}</span>
+                {mensaje}
             </div>
         {/if}
     </main>
@@ -653,6 +956,24 @@
             transform: rotate(360deg);
         }
     }
+    /* ==========================================
+   COLORES DEL PANEL
+========================================== */
+
+    main {
+        --gold: #d4af37;
+        --gold-soft: rgba(212, 175, 55, 0.25);
+        --red: #b51c1c;
+        --red-dark: #9d1515;
+        --red-bright: #c92323;
+        --bg: #0d0d0d;
+        --surface: #151515;
+        --surface-2: #1c1c1c;
+        --border: #292929;
+        --text: #f5f1e8;
+        --muted: #9a9a9a;
+        --ok: #68c46a;
+    }
 
     /* ==========================================
    ESTILO GENERAL
@@ -660,9 +981,11 @@
 
     :global(body) {
         margin: 0;
-        background: radial-gradient(
+
+        background:
+            radial-gradient(
                 circle at top right,
-                rgba(139, 0, 0, 0.12),
+                rgba(139, 0, 0, 0.14),
                 transparent 35%
             ),
             radial-gradient(
@@ -671,16 +994,27 @@
                 transparent 30%
             ),
             #0d0d0d;
+        background-attachment: fixed;
 
         color: #f5f1e8;
-        font-family: Arial, Helvetica, sans-serif;
+
+        font-family: "Zen Kaku Gothic New", Arial, Helvetica, sans-serif;
+
+        -webkit-font-smoothing: antialiased;
     }
 
     main {
         min-height: 100vh;
-        padding: 40px;
+
+        padding: 36px 40px 80px;
+
         max-width: 1300px;
         margin: auto;
+
+        box-sizing: border-box;
+    }
+
+    main :global(*) {
         box-sizing: border-box;
     }
 
@@ -692,50 +1026,120 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
+        gap: 20px;
+        flex-wrap: wrap;
 
-        padding-bottom: 25px;
-        margin-bottom: 35px;
+        padding-bottom: 24px;
+        margin-bottom: 28px;
 
-        border-bottom: 1px solid rgba(212, 175, 55, 0.25);
+        border-bottom: 1px solid var(--gold-soft);
+    }
+
+    .brand {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    }
+
+    .brand img {
+        width: 58px;
+        height: 58px;
+
+        border-radius: 50%;
+        border: 2px solid var(--gold);
+
+        object-fit: cover;
+
+        box-shadow: 0 0 0 4px rgba(212, 175, 55, 0.1);
+    }
+
+    .eyebrow {
+        margin: 0 0 4px;
+
+        color: var(--muted);
+
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 2.5px;
+        text-transform: uppercase;
     }
 
     header h1 {
-        margin: 0 0 8px;
-
-        color: #d4af37;
-
-        font-size: 32px;
-        font-weight: 700;
-
-        letter-spacing: 1px;
-    }
-
-    header p {
         margin: 0;
 
-        color: #aaa;
-        font-size: 14px;
+        color: var(--gold);
+
+        font-family: "Dela Gothic One", sans-serif;
+        font-weight: 400;
+        font-size: 28px;
+        line-height: 1.15;
     }
 
-    header strong {
-        color: #eee;
+    .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .session {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+
+        max-width: 260px;
+
+        padding: 8px 12px;
+
+        border: 1px solid var(--border);
+        border-radius: 999px;
+
+        color: var(--muted);
+
+        font-size: 13px;
+
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    .dot {
+        width: 8px;
+        height: 8px;
+
+        flex-shrink: 0;
+
+        border-radius: 50%;
+
+        background: var(--ok);
+
+        box-shadow: 0 0 0 3px rgba(104, 196, 106, 0.2);
     }
 
     /* ==========================================
    BOTONES
 ========================================== */
 
-    button {
+    button,
+    .btn-ghost {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+
         padding: 9px 16px;
 
         border: 1px solid transparent;
-        border-radius: 7px;
+        border-radius: 9px;
 
         background: #242424;
         color: #eee;
 
+        font-family: inherit;
         font-size: 14px;
-        font-weight: 600;
+        font-weight: 700;
+
+        text-decoration: none;
 
         cursor: pointer;
 
@@ -743,57 +1147,113 @@
             background 0.2s ease,
             color 0.2s ease,
             border-color 0.2s ease,
-            transform 0.2s ease;
+            transform 0.2s ease,
+            box-shadow 0.2s ease;
     }
 
-    button:hover {
-        transform: translateY(-1px);
-
+    button:hover,
+    .btn-ghost:hover {
         background: #303030;
-        border-color: #555;
+        border-color: #4a4a4a;
     }
 
-    /* ==========================================
-   BOTÓN PRINCIPAL
-========================================== */
+    button:active {
+        transform: scale(0.97);
+    }
+
+    button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+    }
+
+    button:focus-visible,
+    .btn-ghost:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible {
+        outline: 2px solid var(--gold);
+        outline-offset: 2px;
+    }
+
+    .btn-ghost {
+        background: transparent;
+        border-color: var(--border);
+    }
 
     .btn-primary {
-        background: #9d1515;
+        background: linear-gradient(135deg, var(--red-dark), var(--red));
+        border: 1px solid var(--red);
         color: #fff;
 
-        border: 1px solid #b51c1c;
-
-        box-shadow: 0 4px 15px rgba(150, 0, 0, 0.2);
+        box-shadow: 0 4px 15px rgba(150, 0, 0, 0.25);
     }
 
     .btn-primary:hover {
-        background: #c21d1d;
+        background: linear-gradient(135deg, var(--red), var(--red-bright));
+        border-color: var(--gold);
 
-        border-color: #d4af37;
+        box-shadow: 0 6px 20px rgba(150, 0, 0, 0.4);
+    }
 
-        box-shadow: 0 5px 18px rgba(150, 0, 0, 0.35);
+    .btn-danger {
+        color: #e35d5d;
+        background: rgba(180, 20, 20, 0.08);
+        border: 1px solid rgba(180, 20, 20, 0.25);
+    }
+
+    .btn-danger:hover {
+        color: white;
+        background: var(--red-dark);
+        border-color: var(--red-bright);
     }
 
     /* ==========================================
-   MENSAJES
+   RESUMEN
 ========================================== */
 
-    .mensaje {
-        padding: 14px 18px;
+    .stats {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
 
-        margin-bottom: 25px;
+        margin-bottom: 24px;
+    }
 
-        background: rgba(212, 175, 55, 0.08);
+    .stat {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
 
-        border: 1px solid rgba(212, 175, 55, 0.35);
+        padding: 16px 18px;
 
-        border-left: 4px solid #d4af37;
+        background: var(--surface);
 
-        border-radius: 8px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+    }
 
-        color: #e8dcae;
+    .stat-value {
+        color: var(--text);
 
-        font-size: 14px;
+        font-size: 28px;
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+        line-height: 1;
+    }
+
+    .stat-value.ok {
+        color: var(--ok);
+    }
+
+    .stat-value.muted {
+        color: var(--muted);
+    }
+
+    .stat-label {
+        color: var(--muted);
+
+        font-size: 12px;
+        font-weight: 500;
     }
 
     /* ==========================================
@@ -801,13 +1261,12 @@
 ========================================== */
 
     section {
-        background: #151515;
+        background: var(--surface);
 
-        border: 1px solid #292929;
+        border: 1px solid var(--border);
+        border-radius: 16px;
 
-        border-radius: 14px;
-
-        padding: 25px;
+        padding: 24px;
 
         box-shadow: 0 10px 35px rgba(0, 0, 0, 0.35);
     }
@@ -816,104 +1275,297 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
+        gap: 15px;
 
-        margin-bottom: 25px;
+        margin-bottom: 18px;
     }
 
     .section-header h2 {
         margin: 0;
 
-        color: #f5f1e8;
+        color: var(--text);
 
         font-size: 22px;
+        font-weight: 900;
     }
 
     /* ==========================================
-   TABLA
+   BÚSQUEDA Y FILTROS
 ========================================== */
 
-    .tabla-container {
-        overflow-x: auto;
+    .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
 
-        border: 1px solid #292929;
-
-        border-radius: 10px;
+        margin-bottom: 18px;
     }
 
-    table {
-        width: 100%;
+    .search {
+        position: relative;
 
-        border-collapse: collapse;
+        flex: 1 1 260px;
+        max-width: 360px;
+    }
+
+    .search span {
+        position: absolute;
+        left: 13px;
+        top: 50%;
+
+        transform: translateY(-50%);
+
+        color: var(--muted);
+
+        font-size: 17px;
+
+        pointer-events: none;
+    }
+
+    .search input {
+        padding-left: 36px;
+    }
+
+    .chips {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .chip {
+        padding: 7px 14px;
+
+        border: 1px solid var(--border);
+        border-radius: 999px;
+
+        background: transparent;
+        color: var(--muted);
+
+        font-size: 13px;
+    }
+
+    .chip.selected {
+        background: rgba(212, 175, 55, 0.12);
+        border-color: var(--gold);
+        color: var(--gold);
+    }
+
+    /* ==========================================
+   LISTA DE PRODUCTOS
+========================================== */
+
+    .lista {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+
+        overflow: hidden;
 
         background: #111;
     }
 
-    th,
-    td {
-        padding: 16px;
+    .fila {
+        display: grid;
+        grid-template-columns: 56px minmax(0, 1fr) 120px 100px 110px 120px 150px;
+        align-items: center;
+        gap: 16px;
 
-        text-align: left;
+        padding: 12px 16px;
 
-        border-bottom: 1px solid #292929;
+        border-bottom: 1px solid var(--border);
+
+        transition:
+            background 0.2s ease,
+            opacity 0.2s ease;
     }
 
-    th {
-        background: #1d1d1d;
-
-        color: #d4af37;
-
-        font-size: 13px;
-
-        text-transform: uppercase;
-
-        letter-spacing: 0.7px;
-    }
-
-    td {
-        color: #d7d7d7;
-
-        font-size: 14px;
-    }
-
-    tbody tr {
-        transition: background 0.2s ease;
-    }
-
-    tbody tr:hover {
-        background: rgba(212, 175, 55, 0.045);
-    }
-
-    tbody tr:last-child td {
+    .fila:last-child {
         border-bottom: none;
     }
 
-    td strong {
+    .fila:not(.fila-head):hover {
+        background: rgba(212, 175, 55, 0.045);
+    }
+
+    .fila-head {
+        padding-top: 11px;
+        padding-bottom: 11px;
+
+        background: var(--surface-2);
+
+        color: var(--gold);
+
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+    }
+
+    .fila.oculto .thumb,
+    .fila.oculto .info,
+    .fila.oculto .precio,
+    .fila.oculto .picante {
+        opacity: 0.45;
+    }
+
+    .thumb {
+        width: 56px;
+        height: 56px;
+
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        border-radius: 10px;
+
+        background: #1f1f1f;
+
+        overflow: hidden;
+    }
+
+    .thumb img {
+        width: 100%;
+        height: 100%;
+
+        object-fit: cover;
+    }
+
+    .thumb span {
+        font-size: 24px;
+    }
+
+    .info {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+
+        min-width: 0;
+    }
+
+    .info strong {
         color: #fff;
+
+        font-size: 15px;
+    }
+
+    .info small {
+        color: var(--muted);
+
+        font-size: 12px;
+
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    .pill {
+        display: inline-block;
+
+        padding: 4px 10px;
+
+        border-radius: 999px;
+
+        background: #232323;
+        color: #d7d7d7;
+
+        font-size: 12px;
+        font-weight: 500;
+    }
+
+    .precio {
+        color: #fff;
+
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .picante {
+        display: flex;
+        gap: 1px;
+    }
+
+    .chili {
+        font-size: 12px;
+
+        filter: grayscale(1);
+        opacity: 0.25;
+    }
+
+    .chili.on {
+        filter: none;
+        opacity: 1;
+    }
+
+    .na {
+        color: #555;
     }
 
     /* ==========================================
-   ESTADOS
+   INTERRUPTOR VISIBLE / OCULTO
 ========================================== */
 
-    .activo,
-    .inactivo {
-        display: inline-flex;
-
+    .estado {
+        display: flex;
         align-items: center;
-
-        gap: 5px;
-
-        font-size: 13px;
-
-        font-weight: 600;
+        gap: 10px;
     }
 
-    .activo {
-        color: #68c46a;
+    .switch,
+    .switch-visual {
+        position: relative;
+
+        width: 42px;
+        height: 24px;
+
+        flex-shrink: 0;
+
+        padding: 0;
+
+        border: none;
+        border-radius: 999px;
+
+        background: #3a3a3a;
+
+        transition: background 0.25s ease;
     }
 
-    .inactivo {
-        color: #888;
+    .switch:hover {
+        background: #474747;
+        border: none;
+    }
+
+    .switch[aria-checked="true"],
+    .toggle input:checked + .switch-visual {
+        background: #2f8f3a;
+    }
+
+    .knob {
+        position: absolute;
+        top: 3px;
+        left: 3px;
+
+        width: 18px;
+        height: 18px;
+
+        border-radius: 50%;
+
+        background: white;
+
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+
+        transition: transform 0.25s cubic-bezier(0.34, 1.4, 0.64, 1);
+    }
+
+    .switch[aria-checked="true"] .knob,
+    .toggle input:checked + .switch-visual .knob {
+        transform: translateX(18px);
+    }
+
+    .estado-texto {
+        color: var(--muted);
+
+        font-size: 12px;
+        font-weight: 500;
     }
 
     /* ==========================================
@@ -922,36 +1574,30 @@
 
     .acciones {
         display: flex;
-
-        gap: 7px;
-
-        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
     }
 
     .acciones button {
-        padding: 7px 11px;
+        padding: 7px 12px;
 
-        font-size: 12px;
+        font-size: 13px;
     }
 
-    /* ==========================================
-   BOTÓN ELIMINAR
-========================================== */
+    .vacio {
+        padding: 50px 20px;
 
-    .btn-danger {
-        color: #e35d5d;
+        text-align: center;
 
-        background: rgba(180, 20, 20, 0.08);
-
-        border: 1px solid rgba(180, 20, 20, 0.25);
+        color: var(--muted);
     }
 
-    .btn-danger:hover {
-        color: white;
+    .vacio span {
+        font-size: 32px;
+    }
 
-        background: #9d1515;
-
-        border-color: #c21d1d;
+    .vacio p {
+        margin: 10px 0 0;
     }
 
     /* ==========================================
@@ -960,104 +1606,153 @@
 
     .modal {
         position: fixed;
-
         inset: 0;
-
         z-index: 1000;
 
-        background: rgba(0, 0, 0, 0.78);
-
-        backdrop-filter: blur(5px);
-
         display: flex;
-
         align-items: center;
-
         justify-content: center;
 
         padding: 20px;
     }
 
-    /* ==========================================
-   CONTENIDO DEL MODAL
-========================================== */
+    .modal-backdrop {
+        position: absolute;
+        inset: 0;
+
+        padding: 0;
+
+        border: none;
+        border-radius: 0;
+
+        background: rgba(0, 0, 0, 0.78);
+
+        backdrop-filter: blur(5px);
+        -webkit-backdrop-filter: blur(5px);
+
+        cursor: default;
+
+        animation: fadeIn 0.2s ease;
+    }
+
+    .modal-backdrop:hover {
+        background: rgba(0, 0, 0, 0.78);
+        border: none;
+    }
+
+    .modal-backdrop:active {
+        transform: none;
+    }
 
     .modal-content {
+        position: relative;
+
         width: 100%;
+        max-width: 580px;
+        max-height: 92vh;
 
-        max-width: 520px;
-
-        max-height: 90vh;
-
-        overflow-y: auto;
-
-        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
 
         background: linear-gradient(145deg, #1b1b1b, #101010);
 
-        border: 1px solid rgba(212, 175, 55, 0.25);
-
-        border-radius: 16px;
-
-        padding: 30px;
-
-        display: flex;
-
-        flex-direction: column;
-
-        gap: 17px;
+        border: 1px solid var(--gold-soft);
+        border-radius: 18px;
 
         box-shadow: 0 25px 80px rgba(0, 0, 0, 0.7);
+
+        overflow: hidden;
+
+        animation: modalIn 0.3s cubic-bezier(0.22, 1, 0.36, 1);
     }
 
-    .modal-content h2 {
-        margin: 0 0 5px;
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+        }
+    }
 
-        color: #d4af37;
+    @keyframes modalIn {
+        from {
+            opacity: 0;
+            transform: translateY(16px) scale(0.98);
+        }
+    }
 
-        font-size: 24px;
+    .modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+
+        padding: 20px 24px;
+
+        border-bottom: 1px solid var(--border);
+    }
+
+    .modal-header h2 {
+        margin: 0;
+
+        color: var(--gold);
+
+        font-family: "Dela Gothic One", sans-serif;
+        font-weight: 400;
+        font-size: 22px;
+    }
+
+    .close {
+        width: 36px;
+        height: 36px;
+
+        padding: 0;
+
+        font-size: 22px;
+        font-weight: 400;
+    }
+
+    .modal-body {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+
+        padding: 22px 24px;
+
+        overflow-y: auto;
     }
 
     /* ==========================================
    CAMPOS
 ========================================== */
 
-    .modal-content label {
+    .modal-body label,
+    legend {
         display: flex;
-
         flex-direction: column;
-
         gap: 7px;
 
         color: #ddd;
 
-        font-size: 14px;
-
-        font-weight: 600;
+        font-size: 13px;
+        font-weight: 700;
     }
 
     input,
     textarea,
     select {
-        box-sizing: border-box;
-
         width: 100%;
 
         padding: 11px 13px;
 
         background: #0d0d0d;
-
         color: #eee;
 
         border: 1px solid #353535;
-
-        border-radius: 7px;
+        border-radius: 9px;
 
         outline: none;
 
         font-family: inherit;
-
         font-size: 14px;
+        font-weight: 400;
 
         transition:
             border-color 0.2s ease,
@@ -1067,63 +1762,251 @@
     input:focus,
     textarea:focus,
     select:focus {
-        border-color: #d4af37;
+        border-color: var(--gold);
 
-        box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.1);
+        box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.12);
     }
 
     textarea {
         min-height: 100px;
 
         resize: vertical;
+
+        line-height: 1.5;
     }
 
-    input::placeholder {
-        color: #666;
+    input::placeholder,
+    textarea::placeholder {
+        color: #5f5f5f;
     }
 
-    /* ==========================================
-   CHECKBOX
-========================================== */
+    .dos-columnas {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+    }
 
-    .checkbox {
-        flex-direction: row !important;
+    .input-precio {
+        position: relative;
+    }
 
+    .input-precio span {
+        position: absolute;
+        left: 13px;
+        top: 50%;
+
+        transform: translateY(-50%);
+
+        color: var(--muted);
+    }
+
+    .input-precio input {
+        padding-left: 26px;
+
+        font-variant-numeric: tabular-nums;
+    }
+
+    /* Nivel de picante */
+
+    fieldset {
+        margin: 0;
+        padding: 0;
+
+        border: none;
+    }
+
+    legend {
+        margin-bottom: 8px;
+        padding: 0;
+    }
+
+    .niveles {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+    }
+
+    .nivel {
+        flex-direction: column;
+        gap: 4px;
+
+        padding: 10px 6px;
+
+        border: 1px solid var(--border);
+
+        background: #0f0f0f;
+        color: var(--muted);
+
+        font-size: 12px;
+        font-weight: 500;
+    }
+
+    .nivel-chiles {
+        font-size: 12px;
+        letter-spacing: -2px;
+    }
+
+    .nivel.selected {
+        background: rgba(181, 28, 28, 0.14);
+        border-color: var(--red-bright);
+        color: #fff;
+    }
+
+    /* Imagen */
+
+    .imagen-campo {
+        display: grid;
+        grid-template-columns: 88px 1fr;
+        align-items: start;
+        gap: 14px;
+    }
+
+    .preview {
+        width: 88px;
+        height: 88px;
+
+        display: flex;
         align-items: center;
+        justify-content: center;
 
-        gap: 10px !important;
+        margin-top: 22px;
 
-        padding: 10px;
+        border: 1px dashed #3a3a3a;
+        border-radius: 12px;
 
-        background: rgba(212, 175, 55, 0.05);
+        background: #0f0f0f;
 
-        border: 1px solid #292929;
+        overflow: hidden;
 
-        border-radius: 7px;
+        font-size: 26px;
     }
 
-    .checkbox input {
-        width: auto;
+    .preview img {
+        width: 100%;
+        height: 100%;
 
-        accent-color: #b51c1c;
+        object-fit: cover;
     }
 
-    /* ==========================================
-   BOTONES DEL MODAL
-========================================== */
+    .ayuda {
+        color: var(--muted);
+
+        font-size: 12px;
+        font-weight: 400;
+    }
+
+    .ayuda.error {
+        color: #ef7373;
+    }
+
+    /* Interruptor del formulario */
+
+    .modal-body .toggle {
+        flex-direction: row;
+        align-items: center;
+        gap: 14px;
+
+        padding: 14px;
+
+        border: 1px solid var(--border);
+        border-radius: 12px;
+
+        background: rgba(212, 175, 55, 0.04);
+
+        cursor: pointer;
+    }
+
+    .toggle input {
+        position: absolute;
+
+        width: 1px;
+        height: 1px;
+
+        opacity: 0;
+    }
+
+    .toggle input:focus-visible + .switch-visual {
+        outline: 2px solid var(--gold);
+        outline-offset: 2px;
+    }
+
+    .toggle strong {
+        display: block;
+
+        color: #eee;
+
+        font-size: 14px;
+    }
+
+    .toggle small {
+        display: block;
+
+        margin-top: 2px;
+
+        color: var(--muted);
+
+        font-size: 12px;
+        font-weight: 400;
+    }
 
     .modal-actions {
         display: flex;
-
         justify-content: flex-end;
-
         gap: 10px;
 
-        margin-top: 10px;
+        padding: 16px 24px;
 
-        padding-top: 20px;
+        border-top: 1px solid var(--border);
 
-        border-top: 1px solid #292929;
+        background: #121212;
+    }
+
+    /* ==========================================
+   AVISO (TOAST)
+========================================== */
+
+    .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        z-index: 2000;
+
+        display: flex;
+        align-items: center;
+        gap: 10px;
+
+        max-width: calc(100vw - 32px);
+
+        padding: 13px 18px;
+
+        transform: translateX(-50%);
+
+        border: 1px solid rgba(104, 196, 106, 0.4);
+        border-radius: 12px;
+
+        background: #142015;
+        color: #d6f0d6;
+
+        font-size: 14px;
+        font-weight: 500;
+
+        box-shadow: 0 12px 35px rgba(0, 0, 0, 0.5);
+
+        animation: toastIn 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .toast.error {
+        border-color: rgba(220, 60, 60, 0.45);
+
+        background: #241212;
+        color: #f3c4c4;
+    }
+
+    @keyframes toastIn {
+        from {
+            opacity: 0;
+            transform: translate(-50%, 12px);
+        }
     }
 
     /* ==========================================
@@ -1141,7 +2024,6 @@
 
     ::-webkit-scrollbar-thumb {
         background: #3a3a3a;
-
         border-radius: 10px;
     }
 
@@ -1150,51 +2032,199 @@
     }
 
     /* ==========================================
-   RESPONSIVE
+   TABLET
+========================================== */
+
+    @media (max-width: 1100px) {
+        .fila {
+            grid-template-columns: 56px minmax(0, 1fr) 110px 90px 120px 140px;
+        }
+
+        .fila > .picante,
+        .fila-head > span:nth-child(5) {
+            display: none;
+        }
+    }
+
+    /* ==========================================
+   CELULAR: LA LISTA SE VUELVE TARJETAS
 ========================================== */
 
     @media (max-width: 768px) {
         main {
-            padding: 20px;
+            padding: 20px 16px 90px;
         }
 
         header {
             align-items: flex-start;
+        }
 
-            gap: 15px;
+        .brand img {
+            width: 46px;
+            height: 46px;
         }
 
         header h1 {
-            font-size: 25px;
+            font-size: 22px;
         }
 
-        .section-header {
-            align-items: flex-start;
-
-            gap: 15px;
-
-            flex-direction: column;
-        }
-
-        section {
-            padding: 15px;
-        }
-
-        th,
-        td {
-            padding: 12px 10px;
-        }
-
-        .acciones {
-            flex-direction: column;
-        }
-
-        .acciones button {
+        .header-actions {
             width: 100%;
         }
 
+        .session {
+            flex: 1 1 100%;
+            max-width: none;
+        }
+
+        .header-actions .btn-ghost {
+            flex: 1;
+        }
+
+        .stats {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .stat {
+            padding: 14px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+        }
+
+        section {
+            padding: 16px;
+        }
+
+        .section-header h2 {
+            font-size: 19px;
+        }
+
+        .search {
+            max-width: none;
+            flex-basis: 100%;
+        }
+
+        .chips {
+            flex-wrap: nowrap;
+
+            overflow-x: auto;
+
+            margin: 0 -16px;
+            padding: 0 16px 4px;
+
+            scrollbar-width: none;
+        }
+
+        .chip {
+            flex-shrink: 0;
+        }
+
+        .lista {
+            border: none;
+            background: transparent;
+
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .fila-head {
+            display: none;
+        }
+
+        .fila {
+            grid-template-columns: 64px minmax(0, 1fr) auto;
+            grid-template-areas:
+                "thumb info precio"
+                "thumb cat  cat"
+                "estado estado acciones";
+            gap: 8px 12px;
+
+            padding: 12px;
+
+            border: 1px solid var(--border);
+            border-radius: 12px;
+
+            background: #111;
+        }
+
+        .fila:last-child {
+            border-bottom: 1px solid var(--border);
+        }
+
+        .fila > .thumb {
+            grid-area: thumb;
+
+            width: 64px;
+            height: 64px;
+        }
+
+        .fila > .info {
+            grid-area: info;
+        }
+
+        .fila > .precio {
+            grid-area: precio;
+            align-self: start;
+        }
+
+        .fila > div:nth-child(3) {
+            grid-area: cat;
+        }
+
+        .fila > .estado {
+            grid-area: estado;
+
+            padding-top: 4px;
+        }
+
+        .fila > .acciones {
+            grid-area: acciones;
+
+            padding-top: 4px;
+        }
+
+        .dos-columnas {
+            grid-template-columns: 1fr;
+        }
+
+        .modal {
+            align-items: flex-end;
+
+            padding: 0;
+        }
+
         .modal-content {
-            padding: 22px;
+            max-width: none;
+            max-height: 94vh;
+
+            border-radius: 18px 18px 0 0;
+        }
+
+        .modal-header,
+        .modal-body,
+        .modal-actions {
+            padding-left: 18px;
+            padding-right: 18px;
+        }
+
+        .modal-actions button {
+            flex: 1;
+        }
+    }
+
+    /* ==========================================
+   MENOS MOVIMIENTO SI EL USUARIO LO PREFIERE
+========================================== */
+
+    @media (prefers-reduced-motion: reduce) {
+        .modal-content,
+        .modal-backdrop,
+        .toast {
+            animation: none;
         }
     }
 </style>

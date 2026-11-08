@@ -87,6 +87,12 @@
     );
 
     // ==========================================
+    // La imagen es una ruta local (/Productos/...) o una foto en la nube (https://...)
+    function esImagen(imagen) {
+        return /^(\/|https?:\/\/)/.test(imagen ?? "");
+    }
+
+    // ==========================================
     // Cuántas unidades de un producto hay en el carrito
     function cantidadEnCarrito(productId) {
         return cart.find((item) => item.id === productId)?.cantidad ?? 0;
@@ -309,8 +315,13 @@ TOTAL: ${formatPrice(cartTotal)}
                     <!-- IMAGEN -->
 
                     <div class="product-image">
-                        {#if product.imagen.startsWith("/")}
-                            <img src={product.imagen} alt={product.nombre} />
+                        {#if esImagen(product.imagen)}
+                            <img
+                                src={product.imagen}
+                                alt={product.nombre}
+                                loading="lazy"
+                                decoding="async"
+                            />
                         {:else}
                             <span>{product.imagen}</span>
                         {/if}
@@ -437,7 +448,7 @@ TOTAL: ${formatPrice(cartTotal)}
                         <!-- IMAGEN -->
 
                         <div class="cart-product-image">
-                            {#if product.imagen.startsWith("/")}
+                            {#if esImagen(product.imagen)}
                                 <img
                                     src={product.imagen}
                                     alt={product.nombre}

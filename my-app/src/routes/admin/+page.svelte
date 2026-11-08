@@ -74,6 +74,114 @@
     let nivelPicante = $state(null);
     let imagenRota = $state(false);
 
+    // ==========================================
+    // SUBIR FOTOS A SUPABASE STORAGE
+    // ==========================================
+
+    const BUCKET = "productos";
+    const MAX_LADO = 900; // px del lado más largo después de comprimir
+
+    let subiendoFoto = $state(false);
+    let imagenOriginal = ""; // foto que tenía el producto al abrir el formulario
+    let fotoNueva = null; // ruta subida en esta edición y aún no guardada
+
+    // Devuelve la ruta dentro del bucket si la URL es de nuestro Storage
+    function rutaEnBucket(url) {
+        const marca = `/storage/v1/object/public/${BUCKET}/`;
+        const i = (url ?? "").indexOf(marca);
+        return i === -1 ? null : decodeURIComponent(url.slice(i + marca.length));
+    }
+
+    async function borrarFoto(url) {
+        const ruta = rutaEnBucket(url);
+        if (!ruta) return;
+
+        const { data, error } = await supabase.storage.from(BUCKET).remove([ruta]);
+        // Supabase no da error si no tenía permiso: devuelve la lista vacía
+        if (error || !data?.length) {
+            console.error("No se pudo borrar la foto:", ruta, error);
+        }
+    }
+
+    function nombreArchivo(texto) {
+        const base = normalizar(texto)
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-|-$/g, "")
+            .slice(0, 40);
+        return `${Date.now()}-${base || "producto"}`;
+    }
+
+    // Achica y comprime la foto en el navegador antes de subirla
+    async function comprimirImagen(archivo) {
+        const bitmap = await createImageBitmap(archivo);
+        const escala = Math.min(1, MAX_LADO / Math.max(bitmap.width, bitmap.height));
+        const ancho = Math.round(bitmap.width * escala);
+        const alto = Math.round(bitmap.height * escala);
+
+        const canvas = document.createElement("canvas");
+        canvas.width = ancho;
+        canvas.height = alto;
+        canvas.getContext("2d").drawImage(bitmap, 0, 0, ancho, alto);
+        bitmap.close?.();
+
+        const aBlob = (tipo, calidad) =>
+            new Promise((resolve) => canvas.toBlob(resolve, tipo, calidad));
+
+        let blob = await aBlob("image/webp", 0.8);
+        // Safari antiguo no genera WebP: usamos JPG
+        if (!blob || blob.type !== "image/webp") {
+            blob = await aBlob("image/jpeg", 0.82);
+        }
+        return blob;
+    }
+
+    async function subirFoto(event) {
+        const input = event.currentTarget;
+        const archivo = input.files?.[0];
+        input.value = ""; // permite volver a elegir el mismo archivo
+
+        if (!archivo) return;
+
+        if (!archivo.type.startsWith("image/")) {
+            notificar("El archivo debe ser una imagen.", "error");
+            return;
+        }
+
+        subiendoFoto = true;
+
+        try {
+            const blob = await comprimirImagen(archivo);
+            const extension = blob.type === "image/webp" ? "webp" : "jpg";
+            const ruta = `${nombreArchivo(nombre)}.${extension}`;
+
+            const { error } = await supabase.storage
+                .from(BUCKET)
+                .upload(ruta, blob, {
+                    contentType: blob.type,
+                    cacheControl: "31536000",
+                    upsert: false,
+                });
+
+            if (error) throw error;
+
+            // Si ya había subido otra foto en esta misma edición, se borra
+            if (fotoNueva) await borrarFoto(fotoNueva);
+
+            const { data } = supabase.storage.from(BUCKET).getPublicUrl(ruta);
+
+            imagenUrl = data.publicUrl;
+            fotoNueva = data.publicUrl;
+            imagenRota = false;
+
+            notificar(`Foto subida (${Math.round(blob.size / 1024)} KB).`);
+        } catch (error) {
+            console.error("Error subiendo foto:", error);
+            notificar("No se pudo subir la foto. Intenta de nuevo.", "error");
+        } finally {
+            subiendoFoto = false;
+        }
+    }
+
     const nivelesPicante = [
         { valor: null, texto: "No aplica" },
         { valor: 1, texto: "Leve" },
@@ -172,6 +280,8 @@
         activo = true;
         nivelPicante = null;
         imagenRota = false;
+        imagenOriginal = imagenUrl;
+        fotoNueva = null;
 
         formularioAbierto = true;
     }
@@ -192,6 +302,8 @@
         activo = producto.activo;
         nivelPicante = producto.nivel_picante ?? null;
         imagenRota = false;
+        imagenOriginal = imagenUrl;
+        fotoNueva = null;
 
         formularioAbierto = true;
     }
@@ -201,7 +313,13 @@
     // ==========================================
 
     function cerrarFormulario() {
-        if (guardando) return;
+        if (guardando || subiendoFoto) return;
+
+        // Si subió una foto pero no guardó, se borra para no ocupar espacio
+        if (fotoNueva) {
+            borrarFoto(fotoNueva);
+            fotoNueva = null;
+        }
 
         formularioAbierto = false;
     }
@@ -278,6 +396,12 @@
             notificar("Producto creado correctamente.");
         }
 
+        // Si cambió la foto, se borra la anterior del Storage
+        if (imagenOriginal && imagenOriginal !== producto.imagen_url) {
+            borrarFoto(imagenOriginal);
+        }
+
+        fotoNueva = null;
         formularioAbierto = false;
     }
 
@@ -342,6 +466,8 @@
         }
 
         productos = productos.filter((p) => p.id !== producto.id);
+
+        borrarFoto(producto.imagen_url);
 
         notificar("Producto eliminado correctamente.");
     }
@@ -543,7 +669,7 @@
                 {#each productosFiltrados as producto (producto.id)}
                     <div class="fila" class:oculto={!producto.activo}>
                         <div class="thumb">
-                            {#if producto.imagen_url?.startsWith("/")}
+                            {#if /^(\/|https?:\/\/)/.test(producto.imagen_url ?? "")}
                                 <img
                                     src={producto.imagen_url}
                                     alt=""
@@ -734,8 +860,10 @@
                         </fieldset>
 
                         <div class="imagen-campo">
-                            <div class="preview">
-                                {#if imagenUrl.trim() && !imagenRota}
+                            <div class="preview" class:cargando={subiendoFoto}>
+                                {#if subiendoFoto}
+                                    <span class="spinner" aria-hidden="true"></span>
+                                {:else if imagenUrl.trim() && !imagenRota}
                                     <img
                                         src={imagenUrl}
                                         alt="Vista previa"
@@ -748,27 +876,52 @@
                                 {/if}
                             </div>
 
-                            <label>
-                                Ruta de la imagen
+                            <div class="foto-acciones">
+                                <span class="campo-titulo">Foto del producto</span>
 
-                                <input
-                                    type="text"
-                                    bind:value={imagenUrl}
-                                    oninput={() => (imagenRota = false)}
-                                    placeholder="/Productos/imagen.jpg"
-                                />
+                                <label
+                                    class="btn-subir"
+                                    class:disabled={subiendoFoto}
+                                >
+                                    <input
+                                        type="file"
+                                        accept="image/jpeg,image/png,image/webp"
+                                        onchange={subirFoto}
+                                        disabled={subiendoFoto}
+                                    />
+                                    {#if subiendoFoto}
+                                        Subiendo foto...
+                                    {:else}
+                                        📷 {imagenUrl.trim()
+                                            ? "Cambiar foto"
+                                            : "Subir foto"}
+                                    {/if}
+                                </label>
 
                                 {#if imagenRota}
                                     <small class="ayuda error">
-                                        No se encontró la imagen en esa ruta.
+                                        No se pudo cargar la foto. Prueba
+                                        subiéndola de nuevo.
                                     </small>
                                 {:else}
                                     <small class="ayuda">
-                                        La imagen debe estar en la carpeta
-                                        static/Productos.
+                                        Desde el celular o el computador. Se
+                                        achica automáticamente.
                                     </small>
                                 {/if}
-                            </label>
+
+                                <details class="ruta-manual">
+                                    <summary>Usar una ruta o enlace</summary>
+
+                                    <input
+                                        type="text"
+                                        aria-label="Ruta o enlace de la imagen"
+                                        bind:value={imagenUrl}
+                                        oninput={() => (imagenRota = false)}
+                                        placeholder="/Productos/imagen.jpg"
+                                    />
+                                </details>
+                            </div>
                         </div>
 
                         <label class="toggle">
@@ -1897,6 +2050,115 @@
 
     .ayuda.error {
         color: #ef7373;
+    }
+
+    /* Subir foto */
+
+    .foto-acciones {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+
+        min-width: 0;
+    }
+
+    .campo-titulo {
+        color: #ddd;
+
+        font-size: 13px;
+        font-weight: 700;
+    }
+
+    .modal-body .btn-subir {
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+
+        padding: 10px 16px;
+
+        border: 1px solid var(--gold-soft);
+        border-radius: 9px;
+
+        background: rgba(212, 175, 55, 0.08);
+        color: var(--gold);
+
+        font-size: 14px;
+        font-weight: 700;
+
+        cursor: pointer;
+
+        transition:
+            background 0.2s ease,
+            border-color 0.2s ease;
+    }
+
+    .modal-body .btn-subir:hover {
+        background: rgba(212, 175, 55, 0.16);
+        border-color: var(--gold);
+    }
+
+    .modal-body .btn-subir.disabled {
+        opacity: 0.6;
+        cursor: progress;
+    }
+
+    .btn-subir input {
+        position: absolute;
+
+        width: 1px;
+        height: 1px;
+
+        opacity: 0;
+    }
+
+    .btn-subir:focus-within {
+        outline: 2px solid var(--gold);
+        outline-offset: 2px;
+    }
+
+    .ruta-manual {
+        width: 100%;
+
+        color: var(--muted);
+
+        font-size: 12px;
+    }
+
+    .ruta-manual summary {
+        cursor: pointer;
+
+        width: fit-content;
+    }
+
+    .ruta-manual summary:hover {
+        color: #ccc;
+    }
+
+    .ruta-manual input {
+        margin-top: 8px;
+    }
+
+    .preview.cargando {
+        border-style: solid;
+        border-color: var(--gold-soft);
+    }
+
+    .preview .spinner {
+        width: 26px;
+        height: 26px;
+
+        border: 3px solid rgba(212, 175, 55, 0.25);
+        border-top-color: var(--gold);
+        border-radius: 50%;
+
+        animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
     }
 
     /* Interruptor del formulario */

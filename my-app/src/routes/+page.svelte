@@ -9,19 +9,28 @@
     // Productos que vienen de Supabase
     let products = $state([]);
 
+    // Nombres de categorías que vienen de Supabase (para el menú)
+    let categoryNames = $state([]);
+
     // Cargar categorías y productos
     onMount(async () => {
         // Obtener categorías
         const { data: categorias, error: categoriasError } = await supabase
             .from("categorias")
-            .select("*");
+            .select("*")
+            .order("id");
 
         if (categoriasError) {
             console.error("Error obteniendo categorías:", categoriasError);
             return;
         }
 
-        console.log("Categorías:", categorias);
+        categoryNames = categorias.map((categoria) => categoria.nombre);
+
+        // Si "Ramens" no existe, mostrar la primera categoría
+        if (!categoryNames.includes(selectedCategory) && categoryNames.length > 0) {
+            selectedCategory = categoryNames[0];
+        }
 
         // Obtener productos
         const { data: productos, error: productosError } = await supabase
@@ -42,16 +51,14 @@
             return {
                 id: producto.id,
                 nombre: producto.nombre,
-                descripcion: producto.descripcion,
+                descripcion: producto.descripcion ?? "",
                 precio: producto.precio,
-                imagen: producto.imagen_url,
+                imagen: producto.imagen_url ?? "",
                 categoria: categoria?.nombre ?? "",
                 activo: producto.activo,
                 nivel_picante: producto.nivel_picante,
             };
         });
-
-        console.log("Productos:", products);
     });
 
     // Controla si el carrito está abierto o no
@@ -166,7 +173,7 @@
     function realizarPedido() {
         if (cart.length === 0) return;
 
-        let mensaje = `🍜 PEDIDO - Mikaito
+        let mensaje = `🍜 PEDIDO - Naito House
 
 `;
 
@@ -206,10 +213,14 @@ TOTAL: ${formatPrice(cartTotal)}
     }
 </script>
 
-<Sidebar onCategoryChange={changeCategory} />
+<Sidebar
+    categorias={categoryNames}
+    activeCategory={selectedCategory}
+    onCategoryChange={changeCategory}
+/>
 
 <svelte:head>
-    <title>Mikaito</title>
+    <title>Naito House</title>
 </svelte:head>
 
 <main class="content">

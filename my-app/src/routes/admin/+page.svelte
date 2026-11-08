@@ -118,8 +118,8 @@
         editando = true;
 
         productoId = producto.id;
-        nombre = producto.nombre;
-        descripcion = producto.descripcion;
+        nombre = producto.nombre ?? "";
+        descripcion = producto.descripcion ?? "";
         precio = producto.precio;
         categoriaId = producto.categoria_id;
         imagenUrl = producto.imagen_url ?? "";

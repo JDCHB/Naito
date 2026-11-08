@@ -81,9 +81,10 @@
                 rgba(5, 5, 5, 0.58),
                 rgba(5, 5, 5, 0.58)
             ),
-            url("/Fondos/Fondo-oscuro.jpg");
+            url("/Fondos/Fondo-oscuro-continuo.jpg");
+        background-color: #080808;
 
-        background-size: 180px 180px;
+        background-size: 190px 190px;
         background-repeat: repeat;
 
         color: white;

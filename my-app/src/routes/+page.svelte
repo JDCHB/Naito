@@ -529,9 +529,11 @@ TOTAL: ${formatPrice(cartTotal)}
         -webkit-font-smoothing: antialiased;
 
         /* FONDO */
-        background-image: url("/Fondos/Fondo-gris.jpeg");
-        background-size: 350px 350px;
-        background-position: center;
+        /* Imagen sin bordes cortados: se repite sin que se note la unión */
+        background-color: #323232;
+        background-image: url("/Fondos/Fondo-gris-continuo.jpg");
+        background-size: 190px 190px;
+        background-position: 0 0;
         background-repeat: repeat;
     }
 

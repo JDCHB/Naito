@@ -1,9 +1,8 @@
 <script>
-    let activeCategory = $state("Ramens");
+    // Las categorías vienen de Supabase (desde +page.svelte)
+    let { categorias = [], activeCategory, onCategoryChange } = $props();
 
-    const categorias = ["Ramens", "Bebidas", "Snacks"];
-
-    let { onCategoryChange } = $props();
+    const iconos = { Ramens: "🍜", Bebidas: "🥤", Snacks: "🍿" };
 </script>
 
 <aside class="sidebar">
@@ -20,18 +19,9 @@
             {#each categorias as categoria}
                 <button
                     class:active={activeCategory === categoria}
-                    onclick={() => {
-                        activeCategory = categoria;
-                        onCategoryChange?.(categoria);
-                    }}
+                    onclick={() => onCategoryChange?.(categoria)}
                 >
-                    {#if categoria === "Ramens"}
-                        🍜
-                    {:else if categoria === "Bebidas"}
-                        🥤
-                    {:else}
-                        🍿
-                    {/if}
+                    {iconos[categoria] ?? "🍽️"}
 
                     <span>{categoria}</span>
                 </button>

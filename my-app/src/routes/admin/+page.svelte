@@ -260,6 +260,157 @@
     }
 
     // ==========================================
+    // CATEGORÍAS
+    // ==========================================
+
+    // Íconos por defecto para las categorías que no tienen uno guardado
+    const ICONOS_POR_NOMBRE = { Ramens: "🍜", Bebidas: "🥤", Snacks: "🍿" };
+    const ICONOS = [
+        "🍜", "🍲", "🍛", "🍣", "🍱", "🍙", "🥟", "🍤",
+        "🍢", "🍡", "🌶️", "🥤", "🧋", "🍵", "🥛", "🍿",
+        "🍪", "🍫", "🍰", "🍦", "🍓", "🥢", "🛒", "⭐",
+    ];
+
+    function iconoDe(categoria) {
+        return categoria?.icono || ICONOS_POR_NOMBRE[categoria?.nombre] || "🍽️";
+    }
+
+    let categoriasAbierto = $state(false);
+    let borradores = $state({}); // id → { nombre, icono } mientras se edita
+    let nuevaCategoria = $state({ nombre: "", icono: "🍜" });
+    let guardandoCategoria = $state(false);
+
+    function productosEnCategoria(id) {
+        return productos.filter((p) => p.categoria_id === id).length;
+    }
+
+    function abrirCategorias() {
+        borradores = Object.fromEntries(
+            categorias.map((c) => [c.id, { nombre: c.nombre, icono: iconoDe(c) }]),
+        );
+        nuevaCategoria = { nombre: "", icono: "🍜" };
+        categoriasAbierto = true;
+    }
+
+    function cerrarCategorias() {
+        if (guardandoCategoria) return;
+        categoriasAbierto = false;
+    }
+
+    function categoriaCambio(c) {
+        const b = borradores[c.id];
+        return b && (b.nombre.trim() !== c.nombre || b.icono !== iconoDe(c));
+    }
+
+    function nombreRepetido(nombre, idActual = null) {
+        const n = normalizar(nombre.trim());
+        return categorias.some((c) => c.id !== idActual && normalizar(c.nombre) === n);
+    }
+
+    async function crearCategoria() {
+        const nombre = nuevaCategoria.nombre.trim();
+
+        if (!nombre) {
+            notificar("Escribe el nombre de la categoría.", "error");
+            return;
+        }
+        if (nombreRepetido(nombre)) {
+            notificar(`Ya existe una categoría llamada "${nombre}".`, "error");
+            return;
+        }
+
+        guardandoCategoria = true;
+
+        const { data, error } = await supabase
+            .from("categorias")
+            .insert({ nombre, icono: nuevaCategoria.icono })
+            .select()
+            .single();
+
+        guardandoCategoria = false;
+
+        if (error) {
+            console.error("Error creando categoría:", error);
+            notificar("No se pudo crear la categoría.", "error");
+            return;
+        }
+
+        categorias = [...categorias, data];
+        borradores[data.id] = { nombre: data.nombre, icono: iconoDe(data) };
+        nuevaCategoria = { nombre: "", icono: "🍜" };
+
+        notificar(`Categoría "${data.nombre}" creada.`);
+    }
+
+    async function guardarCategoria(c) {
+        const b = borradores[c.id];
+        const nombre = b.nombre.trim();
+
+        if (!nombre) {
+            notificar("El nombre no puede quedar vacío.", "error");
+            return;
+        }
+        if (nombreRepetido(nombre, c.id)) {
+            notificar(`Ya existe una categoría llamada "${nombre}".`, "error");
+            return;
+        }
+
+        guardandoCategoria = true;
+
+        const { data, error } = await supabase
+            .from("categorias")
+            .update({ nombre, icono: b.icono })
+            .eq("id", c.id)
+            .select()
+            .single();
+
+        guardandoCategoria = false;
+
+        if (error) {
+            console.error("Error actualizando categoría:", error);
+            notificar("No se pudo guardar la categoría.", "error");
+            return;
+        }
+
+        categorias = categorias.map((x) => (x.id === c.id ? data : x));
+        borradores[c.id] = { nombre: data.nombre, icono: iconoDe(data) };
+
+        notificar(`Categoría "${data.nombre}" actualizada.`);
+    }
+
+    async function eliminarCategoria(c) {
+        const cantidad = productosEnCategoria(c.id);
+
+        if (cantidad > 0) {
+            notificar(
+                `"${c.nombre}" tiene ${cantidad} producto(s). Muévelos a otra categoría antes de eliminarla.`,
+                "error",
+            );
+            return;
+        }
+
+        if (!confirm(`¿Eliminar la categoría "${c.nombre}"?`)) return;
+
+        guardandoCategoria = true;
+
+        const { error } = await supabase.from("categorias").delete().eq("id", c.id);
+
+        guardandoCategoria = false;
+
+        if (error) {
+            console.error("Error eliminando categoría:", error);
+            notificar("No se pudo eliminar la categoría.", "error");
+            return;
+        }
+
+        categorias = categorias.filter((x) => x.id !== c.id);
+        delete borradores[c.id];
+        if (filtroCategoria === c.id) filtroCategoria = "todas";
+
+        notificar(`Categoría "${c.nombre}" eliminada.`);
+    }
+
+    // ==========================================
     // ABRIR FORMULARIO NUEVO
     // ==========================================
 
@@ -495,7 +646,9 @@
 
 <svelte:window
     onkeydown={(event) => {
-        if (event.key === "Escape" && formularioAbierto) cerrarFormulario();
+        if (event.key !== "Escape") return;
+        if (categoriasAbierto) cerrarCategorias();
+        else if (formularioAbierto) cerrarFormulario();
     }}
 />
 
@@ -615,9 +768,15 @@
             <div class="section-header">
                 <h2>Productos</h2>
 
-                <button class="btn-primary" onclick={nuevoProducto}>
-                    + Nuevo producto
-                </button>
+                <div class="section-actions">
+                    <button class="btn-ghost" onclick={abrirCategorias}>
+                        🗂️ Categorías
+                    </button>
+
+                    <button class="btn-primary" onclick={nuevoProducto}>
+                        + Nuevo producto
+                    </button>
+                </div>
             </div>
 
             <div class="toolbar">
@@ -647,7 +806,7 @@
                             class:selected={filtroCategoria === categoria.id}
                             onclick={() => (filtroCategoria = categoria.id)}
                         >
-                            {categoria.nombre}
+                            {iconoDe(categoria)} {categoria.nombre}
                         </button>
                     {/each}
                 </div>
@@ -828,7 +987,7 @@
                                 <select bind:value={categoriaId}>
                                     {#each categorias as categoria (categoria.id)}
                                         <option value={categoria.id}>
-                                            {categoria.nombre}
+                                            {iconoDe(categoria)} {categoria.nombre}
                                         </option>
                                     {/each}
                                 </select>
@@ -964,6 +1123,150 @@
                         </button>
                     </div>
                 </form>
+            </div>
+        {/if}
+
+        <!-- CATEGORÍAS -->
+
+        {#if categoriasAbierto}
+            <div class="modal">
+                <button
+                    class="modal-backdrop"
+                    aria-label="Cerrar categorías"
+                    onclick={cerrarCategorias}
+                ></button>
+
+                <div class="modal-content" role="dialog" aria-labelledby="titulo-categorias">
+                    <div class="modal-header">
+                        <h2 id="titulo-categorias">Categorías</h2>
+
+                        <button
+                            type="button"
+                            class="close"
+                            aria-label="Cerrar"
+                            onclick={cerrarCategorias}
+                        >
+                            ×
+                        </button>
+                    </div>
+
+                    <div class="modal-body">
+                        <p class="ayuda">
+                            Aparecen en el menú del catálogo en este orden. Solo
+                            puedes eliminar una categoría si no tiene productos.
+                        </p>
+
+                        <ul class="cat-lista">
+                            {#each categorias as c (c.id)}
+                                {@const cantidad = productosEnCategoria(c.id)}
+                                {#if borradores[c.id]}
+                                    <li class="cat-fila">
+                                        <select
+                                            class="cat-icono"
+                                            aria-label="Ícono de {c.nombre}"
+                                            bind:value={borradores[c.id].icono}
+                                        >
+                                            {#each ICONOS.includes(borradores[c.id].icono) ? ICONOS : [borradores[c.id].icono, ...ICONOS] as ico}
+                                                <option value={ico}>{ico}</option>
+                                            {/each}
+                                        </select>
+
+                                        <input
+                                            type="text"
+                                            maxlength="30"
+                                            aria-label="Nombre de la categoría"
+                                            bind:value={borradores[c.id].nombre}
+                                            onkeydown={(e) =>
+                                                e.key === "Enter" &&
+                                                categoriaCambio(c) &&
+                                                guardarCategoria(c)}
+                                        />
+
+                                        <span
+                                            class="cat-cantidad"
+                                            title="Productos en esta categoría"
+                                        >
+                                            {cantidad}
+                                            {cantidad === 1 ? "producto" : "productos"}
+                                        </span>
+
+                                        {#if categoriaCambio(c)}
+                                            <button
+                                                class="btn-primary cat-btn"
+                                                disabled={guardandoCategoria}
+                                                onclick={() => guardarCategoria(c)}
+                                            >
+                                                Guardar
+                                            </button>
+                                        {:else}
+                                            <button
+                                                class="btn-danger cat-btn"
+                                                aria-label="Eliminar {c.nombre}"
+                                                title={cantidad > 0
+                                                    ? "Tiene productos: muévelos antes de eliminarla"
+                                                    : "Eliminar categoría"}
+                                                disabled={guardandoCategoria}
+                                                class:bloqueado={cantidad > 0}
+                                                onclick={() => eliminarCategoria(c)}
+                                            >
+                                                🗑
+                                            </button>
+                                        {/if}
+                                    </li>
+                                {/if}
+                            {/each}
+                        </ul>
+
+                        <form
+                            class="cat-nueva"
+                            onsubmit={(e) => {
+                                e.preventDefault();
+                                crearCategoria();
+                            }}
+                        >
+                            <span class="campo-titulo">Nueva categoría</span>
+
+                            <div class="cat-fila">
+                                <select
+                                    class="cat-icono"
+                                    aria-label="Ícono de la nueva categoría"
+                                    bind:value={nuevaCategoria.icono}
+                                >
+                                    {#each ICONOS as ico}
+                                        <option value={ico}>{ico}</option>
+                                    {/each}
+                                </select>
+
+                                <input
+                                    type="text"
+                                    maxlength="30"
+                                    placeholder="Ej: Postres"
+                                    aria-label="Nombre de la nueva categoría"
+                                    bind:value={nuevaCategoria.nombre}
+                                />
+
+                                <button
+                                    type="submit"
+                                    class="btn-primary cat-btn"
+                                    disabled={guardandoCategoria ||
+                                        !nuevaCategoria.nombre.trim()}
+                                >
+                                    + Agregar
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="modal-actions">
+                        <button
+                            type="button"
+                            class="btn-ghost"
+                            onclick={cerrarCategorias}
+                        >
+                            Listo
+                        </button>
+                    </div>
+                </div>
             </div>
         {/if}
 
@@ -1422,6 +1725,81 @@
         padding: 24px;
 
         box-shadow: 0 10px 35px rgba(0, 0, 0, 0.35);
+    }
+
+    .section-actions {
+        display: flex;
+        gap: 10px;
+    }
+
+    /* ==========================================
+   CATEGORÍAS
+========================================== */
+
+    .cat-lista {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+
+        margin: 0;
+        padding: 0;
+
+        list-style: none;
+    }
+
+    .cat-fila {
+        display: grid;
+        grid-template-columns: 64px minmax(0, 1fr) auto auto;
+        align-items: center;
+        gap: 10px;
+
+        padding: 8px;
+
+        border: 1px solid var(--border);
+        border-radius: 12px;
+
+        background: #111;
+    }
+
+    .cat-nueva .cat-fila {
+        grid-template-columns: 64px minmax(0, 1fr) auto;
+
+        border-style: dashed;
+        border-color: var(--gold-soft);
+    }
+
+    .cat-icono {
+        padding: 8px 6px;
+
+        font-size: 20px;
+        text-align: center;
+
+        cursor: pointer;
+    }
+
+    .cat-cantidad {
+        color: var(--muted);
+
+        font-size: 12px;
+        white-space: nowrap;
+    }
+
+    .cat-btn {
+        padding: 8px 14px;
+
+        font-size: 13px;
+    }
+
+    .btn-danger.bloqueado {
+        opacity: 0.4;
+    }
+
+    .cat-nueva {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+
+        margin-top: 6px;
     }
 
     .section-header {
@@ -2362,6 +2740,27 @@
 
         .section-header h2 {
             font-size: 19px;
+        }
+
+        .section-header {
+            flex-wrap: wrap;
+        }
+
+        .section-actions {
+            width: 100%;
+        }
+
+        .section-actions button {
+            flex: 1;
+        }
+
+        .cat-fila {
+            grid-template-columns: 58px minmax(0, 1fr) auto;
+        }
+
+        .cat-cantidad {
+            grid-column: 2;
+            grid-row: 2;
         }
 
         .search {

@@ -1,8 +1,9 @@
 <script>
     // Las categorías vienen de Supabase (desde +page.svelte)
-    let { categorias = [], activeCategory, onCategoryChange } = $props();
+    // iconos: { nombre de categoría → emoji } elegido en el panel admin
+    let { categorias = [], iconos = {}, activeCategory, onCategoryChange } = $props();
 
-    const iconos = { Ramens: "🍜", Bebidas: "🥤", Snacks: "🍿" };
+    const iconosPorDefecto = { Ramens: "🍜", Bebidas: "🥤", Snacks: "🍿" };
 </script>
 
 <aside class="sidebar">
@@ -21,7 +22,7 @@
                     class:active={activeCategory === categoria}
                     onclick={() => onCategoryChange?.(categoria)}
                 >
-                    {iconos[categoria] ?? "🍽️"}
+                    {iconos[categoria] || iconosPorDefecto[categoria] || "🍽️"}
 
                     <span>{categoria}</span>
                 </button>

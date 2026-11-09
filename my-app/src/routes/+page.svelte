@@ -11,6 +11,7 @@
 
     // Nombres de categorías que vienen de Supabase (para el menú)
     let categoryNames = $state([]);
+    let categoryIcons = $state({});
 
     // Cargar categorías y productos
     onMount(async () => {
@@ -26,6 +27,9 @@
         }
 
         categoryNames = categorias.map((categoria) => categoria.nombre);
+        categoryIcons = Object.fromEntries(
+            categorias.map((categoria) => [categoria.nombre, categoria.icono]),
+        );
 
         // Si "Ramens" no existe, mostrar la primera categoría
         if (!categoryNames.includes(selectedCategory) && categoryNames.length > 0) {
@@ -222,6 +226,7 @@ TOTAL: ${formatPrice(cartTotal)}
 
 <Sidebar
     categorias={categoryNames}
+    iconos={categoryIcons}
     activeCategory={selectedCategory}
     onCategoryChange={changeCategory}
 />
